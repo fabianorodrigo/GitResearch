@@ -1,0 +1,21 @@
+{
+  "name": "portalwatchclient",
+  "version": "1.0.0",
+  "description": "Utilitário de análise de portais",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Fabiano Nascimento",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^0.18.0",
+    "bunyan": "^1.8.12",
+    "bunyan-rotating-file-stream": "^1.6.3",
+    "colors": "^1.3.0",
+    "dropbox": "^2.5.13",
+    "fs-extra": "^4.0.3",
+    "moment": "^2.22.1",
+    "readline-sync": "^1.4.9"
+  }
+}
