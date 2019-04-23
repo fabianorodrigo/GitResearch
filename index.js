@@ -2,10 +2,7 @@ var EventEmitter = require("events").EventEmitter;
 
 const readlineSync = require("readline-sync");
 
-const ReleaseFinaisService = require("./ReleaseFinaisService");
-const ReleaseCandidatesService = require("./ReleaseCandidatesService");
-const DeployService = require('./DeployService');
-const ImperiumService = require("./ImperiumService");
+const GitHubService = require("./GitHubService");
 let Moment = require('moment');
 const colors = require("colors");
 const bunyan = require('bunyan');
@@ -53,51 +50,49 @@ printCentro("Starting querying ");
 console.log(lineGraph.yellow);
 
 (async () => {
-    console.log("TIPO", ";", "IMP", ";", "SPRINT", ";", "QT RCS",";", "RF", ";", "CRIAÇÃO RF", ";", "DEPLOY", ";", "OS", ";", "PRODUTOS");
+    const gitService = new GitHubService();
 
-    const rfService = new ReleaseFinaisService();
-    const rcsService = new ReleaseCandidatesService();
-    const deployService = new DeployService();
-    const imperiumService = new ImperiumService();
-   /* const rfsAfter = await rfService.getRFsCriadasAposData(new Moment("2016-12-31"));
-    
-    rfsAfter.forEach(async rf => {
-        let sprints = []
-        if (rf.demanda.tipo == 'PROJETO') {
-            sprints = await imperiumService.getSprint(parseInt(rf.demanda.identificacao), rf.demanda.subIdentificacao);
-            if (sprints && sprints.length > 1) {
-                console.warn(colors.red(`Retornou ${sprints.length} sprints`))
-            }
+    //Retrieve all Solidity repositories
+    const repos = await gitService.getReposByLanguage({ language: 'Solidity', options: { sort: 'stars', order: 'desc' } });
+    //https://stackoverflow.com/questions/37576685/using-async-await-with-a-foreach-loop
+    for (const r of repos.items) {
+        //console.log(r)
+        console.log(colors.yellow(r.full_name), ':', r.description);
+        console.log('URL JSON:', r.url);
+        console.log('URL:', r.html_url);
+        console.log('GIT:', r.git_url);
+        //for each repository, search for expression mocha
+        const expression = 'mocha';
+        //Just to don't be interpreted as abuse detection by github.com
+        await new Promise(done => setTimeout(done, 2000));
+        //const searchResult = await gitService.getExpressionInContent({ repo: r.name, expression });
+        //const searchResult = await gitService.getFilesInRepo({ repo: r.full_name, name: 'test' });
+        const searchResult = await gitService.searchRepositoryWithDiretory({ repo: r.name, owner: r.owner.login, directoriesNames:['test','tests'] });
+        console.log(searchResult);
+        if (searchResult instanceof Error) {
+            //wait 10s and try again
+            await new Promise(done => setTimeout(done, 10000));
+            const searchResult = await gitService.searchRepositoryWithDiretory({ repo: r.name, owner: r.owner.login, directoriesNames:['test','tests'] });
+            console.log(searchResult);
         }
-        const deploys = await deployService.getDeployFromTagInstalada(rf.rfScmUrl);
-        const dataDeploy = deploys == null || deploys.length == 0 ? '???' : deploys[0].data;
-        console.log(rf.demanda.tipo, ";", rf.demanda.identificacao, ";", rf.demanda.subIdentificacao, ";", rf.nomeRf, ";", rf.dataCriacao, ";", dataDeploy, ";", sprints && sprints.length > 0 ? sprints[0].numeroOS : 'NULL', ";", sprints && sprints.length > 0 && sprints[0].produtos ? sprints[0].produtos.join(',') : '[]');
-    });*/
-
-    const numProjetoCIFormat = "0000000";
-
-    const sprints = await imperiumService.getSprintsPublicadasAposData(new Moment("2016-12-31"));
-    sprints.forEach(async sp => {
-        const identificacao = (numProjetoCIFormat + sp.numeroProjeto.toString()).substr(sp.numeroProjeto.toString().length);
-        //console.log(colors.yellow(identificacao),numProjetoCIFormat.length-sp.numeroProjeto.toString().length)
-        const rfs = await rfService.getRFsDemanda('PROJETO', identificacao, sp.nomeSprint);
-        const rcs = await rcsService.getRCsDemanda('PROJETO', identificacao, sp.nomeSprint);
-        //console.log(rfs)
-        if (rfs != null && rfs.length > 0) {
-            rfs.forEach(async rf => {
-                const deploys = await deployService.getDeployFromTagInstalada(rf.rfScmUrl);
-                const dataDeploy = deploys == null || deploys.length == 0 ? '???' : deploys[0].data;
-                console.log("PROJETO;", sp.numeroProjeto, ";", sp.nomeSprint, ";", rcs.length,";", rf.nomeRf, ";", rf.dataCriacao, ";", dataDeploy, ";", sp.numeroOS, ";", sp.produtos ? sp.produtos.join(',') : '[]');
-            })
+        /*if (searchResult.items && searchResult.items.length > 0) {
+            console.log(colors.blue(`${r.name} contains '${expression}'`));
+            await Promise.all(searchResult.map(async sr => {
+                console.log(r.name, sr);
+                return;
+            }));
         } else {
-            console.log("PROJETO;", sp.numeroProjeto, ";", sp.nomeSprint, ";", rcs.length, ";-;-;", sp.dataProducao, "*;", sp.numeroOS, ";", sp.produtos ? sp.produtos.join(',') : '[]');
-        }
-    })
+            console.log(colors.red(`${r.name} DOES NOT contain '${expression}'`));
+        }*/
 
+    }
 })();
 
-//const snapshot = readlineSync.question("What is the requested snapshot (YYWW)?");
-
+function sleep(ms) {
+    return new Promise(resolve => {
+        setTimeout(resolve, ms)
+    })
+}
 
 //ee.emit("findFolderEvent");
 const intervalApp = setInterval(() => { }, 10000);

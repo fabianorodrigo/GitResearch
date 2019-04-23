@@ -9,6 +9,7 @@
   "author": "Fabiano Nascimento",
   "license": "ISC",
   "dependencies": {
+    "@octokit/rest": "^16.25.0",
     "axios": "^0.18.0",
     "bunyan": "^1.8.12",
     "bunyan-rotating-file-stream": "^1.6.3",
