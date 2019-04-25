@@ -4,6 +4,7 @@ const Octokit = require('@octokit/rest');
 /**
  * OCOKIT REFERENCE: https://octokit.github.io/rest.js/#octokit-routes-repos-list-public
  *
+ * Search for repositories: https://api.github.com/search/repositories?q=+language:Solidity
  * Commits of a repo: https://api.github.com/repos/willitscale/learning-solidity/commits
  * Contents of a repo: https://api.github.com/repositories/103062798/contents/
  * Get a tree of a OWNER, REPO, SHA: https://api.github.com/repos/willitscale/learning-solidity/git/trees/36b11d0f1bc2b29112efeb9897cef2647fda8348?recursive=0
@@ -49,12 +50,23 @@ class GitHubService {
   /**
    * Search repositories by language
    * @param {String} language  Programming language to filter
-   * @param {object} options Options of return result: See https://developer.github.com/v3/search/#search-repositories
+   * @param {String} sort Field to which the results will be ordered: See https://developer.github.com/v3/search/#search-repositories
+   * @param {String} order Order ASC or DESC that the results will be presented
+   * @param {Number} per_page Results per page (max 100)
+   * @param {Number} page Page number to retrieve in the results
    * @returns Object with response of the server. If success, this object contains a property
    * "items", an array with all repositories found
    */
-  async getReposByLanguage({ language, options }) {
-    const result = await this.octokit.search.repos({ q: `language:${language}`, options });
+  async getReposByLanguage({
+    language, sort, order, per_page = 100, page = 1,
+  }) {
+    const result = await this.octokit.search.repos({
+      q: `language:${language}`,
+      sort,
+      order,
+      per_page,
+      page,
+    });
     if (result.status === 200) {
       return result.data;
     }
