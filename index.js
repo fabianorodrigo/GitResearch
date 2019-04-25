@@ -65,11 +65,12 @@ console.log(lineGraph.yellow);
 
     // https://stackoverflow.com/questions/37576685/using-async-await-with-a-foreach-loop
     for (const r of repos.items) {
-      // console.log(r)
+      // console.log(r);
       console.log(colors.yellow(r.full_name), ':', r.description);
       console.log('URL JSON:', r.url);
       console.log('URL:', r.html_url);
       console.log('GIT:', r.git_url);
+      console.log('Stars:', r.stargazers_count);
       // Just to don't be interpreted as abuse detection by github.com
       await new Promise(done => setTimeout(done, 2000));
       // const searchResult = await gitService.getExpressionInContent({ repo: r.name, expression });
@@ -83,6 +84,9 @@ console.log(lineGraph.yellow);
       if (searchResult.length > 0) {
         reposWithTest.push({
           name: r.name,
+          owner: r.owner.login,
+          cloneUrl: r.clone_url,
+          stars: r.stargazers_count,
           r,
         });
       }

@@ -102,6 +102,7 @@ class GitHubService {
           owner,
           repo,
           tree_sha: resultCommits.data[0].sha,
+          recursive: 1,
         });
         if (resultTree.status === 200) {
           if (resultTree.data.truncated) {
