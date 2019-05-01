@@ -87,10 +87,13 @@ class GitHubService {
    *
    * @param {String} owner Owner being analysed
    * @param {String} repo  Repo being analysed
-   * @param {Array} directoriesNames List of names of directories that you're searching for
+   * @param {Array} names List of names of directories/files that you're searching for
+   * @param {string} treeType The type of tree you're searching for (default = tree)
    * @returns Results of search
    */
-  async searchRepositoryWithDiretory({ owner, repo, directoriesNames }) {
+  async searchTreesInRepository({
+    owner, repo, names, treeType = 'tree',
+  }) {
     const results = [];
     try {
       const resultCommits = await this.octokit.repos.listCommits({
@@ -110,9 +113,9 @@ class GitHubService {
           } else {
             for (const tree of Object.values(resultTree.data.tree)) {
               // Only directories that last part of path corresponds to the directoryName
-              if (tree.type === 'tree') {
-                for (const dirName of directoriesNames) {
-                  if (tree.path === dirName || tree.path.endsWith('/'.concat(dirName))) {
+              if (tree.type === treeType) {
+                for (const treeName of names) {
+                  if (tree.path === treeName || tree.path.endsWith('/'.concat(treeName))) {
                     results.push(tree);
                     break;
                   }
@@ -123,17 +126,11 @@ class GitHubService {
           }
         } else {
           console.log(colors.red(resultTree.status), ':', resultTree.headers);
-          throw new Error(
-            `Fail to search for tree in repository ${repo} of owner ${owner} sha ${
-              resultCommits.data[0].sha
-            }: ${resultTree.status}`,
-          );
+          throw new Error(`Fail to search for tree in repository ${repo} of owner ${owner} sha ${resultCommits.data[0].sha}: ${resultTree.status}`);
         }
       } else {
         console.log(colors.red(resultCommits.status), ':', resultCommits.headers);
-        throw new Error(
-          `Fail to list commits in repository ${repo} of owner ${owner}: ${resultCommits.status}`,
-        );
+        throw new Error(`Fail to list commits in repository ${repo} of owner ${owner}: ${resultCommits.status}`);
       }
     } catch (e) {
       console.log(colors.red('EXCEPTION:'), e.message);
@@ -149,15 +146,15 @@ class GitHubService {
    */
   async getFilesInRepo({ repo, name }) {
     try {
-      const result = await this.octokit.search.code({ q: `+filename:${name}+repo${repo}` });
+      const result = await this.octokit.search.code({
+        q: `+filename:${name}+repo${repo}`,
+      });
 
       if (result.status === 200) {
         return result.data;
       }
       console.log(colors.red(result.status), ':', result.headers);
-      throw new Error(
-        `Fail to search for file/directory '${name}' in repository ${repo}: ${result.status}`,
-      );
+      throw new Error(`Fail to search for file/directory '${name}' in repository ${repo}: ${result.status}`);
     } catch (e) {
       console.log(colors.red('EXCEPTION:'), e.message);
       return e;
@@ -171,14 +168,14 @@ class GitHubService {
    * @returns Results of search
    */
   async getExpressionInContent({ repo, expression }) {
-    const result = await this.octokit.search.code({ q: `${expression}+in:file+repo${repo}` });
+    const result = await this.octokit.search.code({
+      q: `${expression}+in:file+repo${repo}`,
+    });
     if (result.status === 200) {
       return result.data;
     }
     console.log(colors.red(result.status), ':', result.headers);
-    throw new Error(
-      `Fail to search for expression '${expression}' in repository ${repo}: ${result.status}`,
-    );
+    throw new Error(`Fail to search for expression '${expression}' in repository ${repo}: ${result.status}`);
   }
 }
 

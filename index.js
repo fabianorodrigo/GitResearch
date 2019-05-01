@@ -66,11 +66,23 @@ console.log(lineGraph.yellow);
   Your choice: `);
 
   if (functionality === '2') {
+    console.log('#########################  REPOSITORY STATS #########################');
     const reposLoaded = Object.values(solidityRepos);
-    const repoWithTestsAndStars = reposLoaded.filter(
-      sr => sr.searchResults.length > 0 && sr.repo.stargazers_count > 0,
-    );
-    repoWithTestsAndStars.sort((a, b) => {
+    console.log('Total repos:', reposLoaded.length);
+    console.log('');
+    console.log('Total Starred:', reposLoaded.filter(sr => sr.repo.stargazers_count > 0).length);
+    console.log('Total 10+Stars:', reposLoaded.filter(sr => sr.repo.stargazers_count >= 10).length);
+    console.log('Total 50+Stars:', reposLoaded.filter(sr => sr.repo.stargazers_count >= 50).length);
+    console.log('Total 100+Stars:', reposLoaded.filter(sr => sr.repo.stargazers_count >= 100).length);
+    console.log('');
+    console.log('Truffled:', reposLoaded.filter(sr => sr.truffleTrees.length > 0).length);
+    console.log('Truffled Starred:', reposLoaded.filter(sr => sr.truffleTrees.length > 0 && sr.repo.stargazers_count > 0).length);
+    console.log('Truffled 10+Stars:', reposLoaded.filter(sr => sr.truffleTrees.length > 0 && sr.repo.stargazers_count >= 10).length);
+    console.log('Truffled 50+Stars:', reposLoaded.filter(sr => sr.truffleTrees.length > 0 && sr.repo.stargazers_count >= 50).length);
+    console.log('Truffled 100+Stars:', reposLoaded.filter(sr => sr.truffleTrees.length > 0 && sr.repo.stargazers_count >= 100).length);
+    console.log('');
+    const repoWithTests = reposLoaded.filter(sr => sr.testTrees.length > 0);
+    repoWithTests.sort((a, b) => {
       if (a.repo.stargazers_count < b.repo.stargazers_count) {
         return 1;
       }
@@ -80,17 +92,34 @@ console.log(lineGraph.yellow);
       // a deve ser igual a b
       return 0;
     });
+    console.log('');
+    console.log('Testable:', repoWithTests.length);
+    console.log('Testable Starred:', repoWithTests.filter(sr => sr.repo.stargazers_count > 0).length);
+    console.log('Testable 10+Stars:', repoWithTests.filter(sr => sr.repo.stargazers_count >= 10).length);
+    console.log('Testable 50+Stars:', repoWithTests.filter(sr => sr.repo.stargazers_count >= 50).length);
+    console.log('Testable 100+Stars:', repoWithTests.filter(sr => sr.repo.stargazers_count >= 100).length);
     console.log(
-      `######################### STARED REPOS WITH TEST TREES: ${repoWithTestsAndStars.length} / ${
+      `######################### 10+ STARS REPOS WITH TEST TREES: ${repoWithTests.filter(sr => sr.repo.stargazers_count >= 10).length} / ${
         reposLoaded.length
       } #########################`,
     );
-    repoWithTestsAndStars.forEach((r) => {
-      console.log(colors.yellow(r.repo.full_name), colors.blue(r.repo.stargazers_count));
-      console.log('Tests Trees:', r.searchResults.length);
-      console.log(r.repo.git_url);
-    });
+    repoWithTests
+      .filter(sr => sr.repo.stargazers_count >= 10)
+      .forEach((r) => {
+        console.log(colors.yellow(r.repo.full_name), colors.blue(r.repo.stargazers_count));
+        console.log('Truffle?', r.truffleTrees.length == 0 ? colors.red('NO') : colors.green('YES'));
+        console.log('Tests Trees:', r.testTrees.length);
+        console.log(r.repo.git_url);
+      });
   } else if (functionality === '1') {
+    const filterStars = parseInt(
+      readlineSync.question(`Apply filter of star count to search for tests and truffle?
+  0. No filter
+  N. Quantity of stars (N is the minimum quantity of stars to include in the search for tests and truffle)
+
+  Stars: `),
+    );
+
     do {
       page++;
       // Retrieve all Solidity repositories
@@ -105,6 +134,9 @@ console.log(lineGraph.yellow);
 
       // https://stackoverflow.com/questions/37576685/using-async-await-with-a-foreach-loop
       for (const r of repos.items) {
+        if (r.stargazers_count < filterStars) {
+          continue;
+        }
         console.log(colors.yellow(r.full_name), ':', r.description);
         console.log('URL JSON:', r.url);
         console.log('URL:', r.html_url);
@@ -113,47 +145,74 @@ console.log(lineGraph.yellow);
         if (!solidityRepos[r.full_name]) {
           solidityRepos[r.full_name] = {
             repo: r,
-            searchResults: [],
+            testTrees: [],
+            truffleTrees: [],
           };
           console.log(colors.cyan('NEW'));
         } else if (solidityRepos[r.full_name].repo.stargazers_count != r.stargazers_count) {
-          console.log(
-            colors.magenta(
-              `UPDATE STARS from ${solidityRepos[r.full_name].repo.stargazers_count} to ${
-                r.stargazers_count
-              }`,
-            ),
-          );
+          console.log(colors.magenta(`UPDATE STARS from ${solidityRepos[r.full_name].repo.stargazers_count} to ${r.stargazers_count}`));
           solidityRepos[r.full_name].repo.stargazers_count = r.stargazers_count;
           fs.writeFileSync(filePath, solidityRepos, { encoding: 'UTF8' });
         }
 
+        // SEARCH FOR DIRECTORIES 'test' OR 'tests'
         // search only if there is no item in the results
-        if (solidityRepos[r.full_name].searchResults.length == 0) {
+        if (solidityRepos[r.full_name].testTrees.length == 0) {
           // Just to don't be interpreted as abuse detection by github.com
           await new Promise(done => setTimeout(done, 2000));
-          const searchResult = await gitService.searchRepositoryWithDiretory({
+          const searchResult = await gitService.searchTreesInRepository({
             repo: r.name,
             owner: r.owner.login,
-            directoriesNames: ['test', 'tests'],
+            names: ['test', 'tests'],
           });
 
           if (searchResult instanceof Error) {
             // wait 10s and try again
             await new Promise(done => setTimeout(done, 10000));
-            const searchResult = await gitService.searchRepositoryWithDiretory({
+            const searchResult = await gitService.searchTreesInRepository({
               repo: r.name,
               owner: r.owner.login,
-              directoriesNames: ['test', 'tests'],
+              names: ['test', 'tests'],
             });
             if (searchResult instanceof Error) {
-              console.log(r.owner.login, r.name, colors.red(e.message));
+              console.log(r.owner.login, r.name, colors.red(searchResult.message));
             }
           } else {
-            solidityRepos[r.full_name].searchResults = searchResult;
+            solidityRepos[r.full_name].testTrees = searchResult;
           }
           fs.writeFileSync(filePath, JSON.stringify(solidityRepos, null, 4), { encoding: 'UTF8' });
         }
+
+        // SEARCH FOR FILES 'trufle.js' OR 'trufle-config.js'
+        // search only if there is no item in the results
+        if (solidityRepos[r.full_name].truffleTrees == null || solidityRepos[r.full_name].truffleTrees.length == 0) {
+          // Just to don't be interpreted as abuse detection by github.com
+          await new Promise(done => setTimeout(done, 2000));
+          const searchResult = await gitService.searchTreesInRepository({
+            repo: r.name,
+            owner: r.owner.login,
+            names: ['trufle.js', 'truffle-config.js'],
+            treeType: 'blob',
+          });
+
+          if (searchResult instanceof Error) {
+            // wait 10s and try again
+            await new Promise(done => setTimeout(done, 10000));
+            const searchResult = await gitService.searchTreesInRepository({
+              repo: r.name,
+              owner: r.owner.login,
+              names: ['trufle.js', 'truffle-config.js'],
+              treeType: 'blob',
+            });
+            if (searchResult instanceof Error) {
+              console.log(r.owner.login, r.name, colors.red(searchResult.message));
+            }
+          } else {
+            solidityRepos[r.full_name].truffleTrees = searchResult;
+          }
+          fs.writeFileSync(filePath, JSON.stringify(solidityRepos, null, 4), { encoding: 'UTF8' });
+        }
+
         /* if (searchResult.items && searchResult.items.length > 0) {
             console.log(colors.blue(`${r.name} contains '${expression}'`));
             await Promise.all(searchResult.map(async sr => {
