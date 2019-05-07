@@ -98,7 +98,15 @@ console.log(lineGraph.yellow);
     console.log('Testable 10+Stars:', repoWithTests.filter(sr => sr.repo.stargazers_count >= 10).length);
     console.log('Testable 50+Stars:', repoWithTests.filter(sr => sr.repo.stargazers_count >= 50).length);
     console.log('Testable 100+Stars:', repoWithTests.filter(sr => sr.repo.stargazers_count >= 100).length);
-    console.log(
+    const repoTruffledWithTests = reposLoaded.filter(sr => sr.testTrees.length > 0 && sr.truffleTrees.length > 0);
+    console.log('');
+    console.log('Truffled Testable:', repoTruffledWithTests.length);
+    console.log('Truffled Testable Starred:', repoTruffledWithTests.filter(sr => sr.repo.stargazers_count > 0).length);
+    console.log('Truffled Testable 10+Stars:', repoTruffledWithTests.filter(sr => sr.repo.stargazers_count >= 10).length);
+    console.log('Truffled Testable 50+Stars:', repoTruffledWithTests.filter(sr => sr.repo.stargazers_count >= 50).length);
+    console.log('Truffled Testable 100+Stars:', repoTruffledWithTests.filter(sr => sr.repo.stargazers_count >= 100).length);
+
+    /* console.log(
       `######################### 10+ STARS REPOS WITH TEST TREES: ${repoWithTests.filter(sr => sr.repo.stargazers_count >= 10).length} / ${
         reposLoaded.length
       } #########################`,
@@ -110,7 +118,7 @@ console.log(lineGraph.yellow);
         console.log('Truffle?', r.truffleTrees.length == 0 ? colors.red('NO') : colors.green('YES'));
         console.log('Tests Trees:', r.testTrees.length);
         console.log(r.repo.git_url);
-      });
+      }); */
   } else if (functionality === '1') {
     const filterStars = parseInt(
       readlineSync.question(`Apply filter of star count to search for tests and truffle?
