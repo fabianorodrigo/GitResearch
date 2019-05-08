@@ -139,6 +139,46 @@ class GitHubService {
   }
 
   /**
+   * Get a tree in the the repository
+   *
+   * @param {String} owner Owner being analysed
+   * @param {String} repo  Repo being analysed
+   * @param {string} tree_sha The sha of a the tree you want
+   * @param {boolean} recursive TRUE if you want a recursive search
+   * @returns Results of search
+   */
+  async getATree({
+    owner, repo, tree_sha, recursive = false,
+  }) {
+    const results = [];
+
+    try {
+      const resultTree = await this.octokit.git.getTree({
+        owner,
+        repo,
+        tree_sha,
+        // recursive: recursive ? '1' : '0',
+      });
+      if (resultTree.status === 200) {
+        if (resultTree.data.truncated) {
+          throw new Error('Truncated situation need to be handled');
+        } else {
+          for (const tree of Object.values(resultTree.data.tree)) {
+            results.push(tree);
+          }
+          return results;
+        }
+      } else {
+        console.log(colors.red(resultTree.status), ':', resultTree.headers);
+        throw new Error(`Fail to search for tree in repository ${repo} of owner ${owner} sha ${resultTree.data[0].sha}: ${resultTree.status}`);
+      }
+    } catch (e) {
+      console.log(colors.red('EXCEPTION:'), e.message);
+      return e;
+    }
+  }
+
+  /**
    * Search in the the repository for the files and directories with the name
    * @param {String} repo  Repo being analysed
    * @param {String} name File or directory name that you're searching for

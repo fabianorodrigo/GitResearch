@@ -62,10 +62,26 @@ console.log(lineGraph.yellow);
   const functionality = readlineSync.question(`What do you want to do?
   1. Retrieve/update local data from Github
   2. Analyse local data
+  3. List trees of the testes stored local (experimental)
 
   Your choice: `);
 
-  if (functionality === '2') {
+  if (functionality === '3') {
+    const reposLoaded = Object.values(solidityRepos);
+    const repoTruffledWithTests = reposLoaded.filter(sr => sr.testTrees.length > 0 && sr.truffleTrees.length > 0);
+    console.log('Truffled Testable:', repoTruffledWithTests.length);
+
+    for (const r of repoTruffledWithTests) {
+      console.log(colors.yellow(r.repo.full_name));
+      for (const testTree of r.testTrees) {
+        console.log(colors.green(testTree.path));
+        const tree = await gitService.getATree({ owner: r.repo.owner.login, repo: r.repo.name, tree_sha: testTree.sha });
+        tree.forEach((t) => {
+          console.log(t.path);
+        });
+      }
+    }
+  } else if (functionality === '2') {
     console.log('#########################  REPOSITORY STATS #########################');
     const reposLoaded = Object.values(solidityRepos);
     console.log('Total repos:', reposLoaded.length);
@@ -128,6 +144,8 @@ console.log(lineGraph.yellow);
   Stars: `),
     );
 
+    const forceSearchTest = readlineSync.question("Search for 'test' and 'tests' even if it's already have a list (s/N)?: ").toUpperCase() === 'S';
+
     do {
       page++;
       // Retrieve all Solidity repositories
@@ -165,10 +183,10 @@ console.log(lineGraph.yellow);
 
         // SEARCH FOR DIRECTORIES 'test' OR 'tests'
         // search only if there is no item in the results
-        if (solidityRepos[r.full_name].testTrees.length == 0) {
+        if (solidityRepos[r.full_name].testTrees.length == 0 || forceSearchTest) {
           // Just to don't be interpreted as abuse detection by github.com
           await new Promise(done => setTimeout(done, 2000));
-          const searchResult = await gitService.searchTreesInRepository({
+          let searchResult = await gitService.searchTreesInRepository({
             repo: r.name,
             owner: r.owner.login,
             names: ['test', 'tests'],
@@ -177,17 +195,40 @@ console.log(lineGraph.yellow);
           if (searchResult instanceof Error) {
             // wait 10s and try again
             await new Promise(done => setTimeout(done, 10000));
-            const searchResult = await gitService.searchTreesInRepository({
+            searchResult = await gitService.searchTreesInRepository({
               repo: r.name,
               owner: r.owner.login,
               names: ['test', 'tests'],
             });
             if (searchResult instanceof Error) {
               console.log(r.owner.login, r.name, colors.red(searchResult.message));
+              continue;
             }
-          } else {
-            solidityRepos[r.full_name].testTrees = searchResult;
           }
+
+          // Buscar os arquivos dentro dos diretorios 'test' ou 'tests'
+          for (const testDir of searchResult) {
+            testDir.children = [];
+            console.log(colors.green(testDir.path));
+            let tree = await gitService.getATree({ repo: r.name, owner: r.owner.login, tree_sha: testDir.sha });
+            if (tree instanceof Error) {
+              // wait 10s and try again
+              await new Promise(done => setTimeout(done, 10000));
+              tree = await gitService.getATree({ repo: r.name, owner: r.owner.login, tree_sha: testDir.sha });
+              if (tree instanceof Error) {
+                console.log(r.owner.login, r.name, colors.yellow(testDir.path), colors.red(searchResult.message));
+                continue;
+              }
+            }
+            tree.forEach((t) => {
+              console.log(t.path);
+              if (t.size > 0) {
+                testDir.children.push(t);
+              }
+            });
+          }
+          solidityRepos[r.full_name].testTrees = searchResult;
+
           fs.writeFileSync(filePath, JSON.stringify(solidityRepos, null, 4), { encoding: 'UTF8' });
         }
 
