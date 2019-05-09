@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 const colors = require('colors');
 const bunyan = require('bunyan');
 const RotatingFileStream = require('bunyan-rotating-file-stream');
@@ -121,6 +122,53 @@ console.log(lineGraph.yellow);
     console.log('Truffled Testable 10+Stars:', repoTruffledWithTests.filter(sr => sr.repo.stargazers_count >= 10).length);
     console.log('Truffled Testable 50+Stars:', repoTruffledWithTests.filter(sr => sr.repo.stargazers_count >= 50).length);
     console.log('Truffled Testable 100+Stars:', repoTruffledWithTests.filter(sr => sr.repo.stargazers_count >= 100).length);
+    console.log('');
+
+    const qtdByExtensao = {
+      '.js': {
+        qtd: 0,
+      },
+      '.sol': {
+        qtd: 0,
+      },
+    };
+    const qtdByQtdArquivosTeste = {
+      0: { qtdRepos: 0, repos: [] },
+    };
+
+    repoTruffledWithTests.forEach((r) => {
+      let totalArquivos = 0;
+      r.testTrees.forEach((t) => {
+        t.children.forEach((f) => {
+          // sum files of repository
+          totalArquivos += 1;
+          // calc by extension
+          if (qtdByExtensao[path.extname(f.path).toLowerCase()] == null) {
+            qtdByExtensao[path.extname(f.path).toLowerCase()] = { qtd: 0 };
+          }
+          qtdByExtensao[path.extname(f.path).toLowerCase()].qtd += 1;
+          // calc by size
+          if (qtdByExtensao[path.extname(f.path).toLowerCase()][f.size] == null) {
+            qtdByExtensao[path.extname(f.path).toLowerCase()][f.size] = 0;
+          }
+          qtdByExtensao[path.extname(f.path).toLowerCase()][f.size] += 1;
+        });
+      });
+      if (qtdByQtdArquivosTeste[totalArquivos] == null) {
+        qtdByQtdArquivosTeste[totalArquivos] = { qtdRepos: 0, repos: [] };
+      }
+      qtdByQtdArquivosTeste[totalArquivos].qtdRepos += 1;
+      qtdByQtdArquivosTeste[totalArquivos].repos.push(r.repo.full_name);
+    });
+
+    console.log('');
+    Object.keys(qtdByQtdArquivosTeste).forEach((qtdFiles) => {
+      console.log(`Truffle Testable - ${qtdFiles} files:`, qtdByQtdArquivosTeste[qtdFiles].qtdRepos, 'repositories');
+    });
+    console.log('');
+    Object.keys(qtdByExtensao).forEach((ext) => {
+      console.log(`Truffle Testable - files ${ext}:`, qtdByExtensao[ext].qtd, 'files');
+    });
 
     /* console.log(
       `######################### 10+ STARS REPOS WITH TEST TREES: ${repoWithTests.filter(sr => sr.repo.stargazers_count >= 10).length} / ${
@@ -210,11 +258,21 @@ console.log(lineGraph.yellow);
           for (const testDir of searchResult) {
             testDir.children = [];
             console.log(colors.green(testDir.path));
-            let tree = await gitService.getATree({ repo: r.name, owner: r.owner.login, tree_sha: testDir.sha });
+            let tree = await gitService.getATree({
+              repo: r.name,
+              owner: r.owner.login,
+              tree_sha: testDir.sha,
+              recursive: 1,
+            });
             if (tree instanceof Error) {
               // wait 10s and try again
               await new Promise(done => setTimeout(done, 10000));
-              tree = await gitService.getATree({ repo: r.name, owner: r.owner.login, tree_sha: testDir.sha });
+              tree = await gitService.getATree({
+                repo: r.name,
+                owner: r.owner.login,
+                tree_sha: testDir.sha,
+                recursive: 1,
+              });
               if (tree instanceof Error) {
                 console.log(r.owner.login, r.name, colors.yellow(testDir.path), colors.red(searchResult.message));
                 continue;
