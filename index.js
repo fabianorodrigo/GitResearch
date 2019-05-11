@@ -51,7 +51,9 @@ console.log(lineGraph.yellow);
   let page = 0;
   const perPage = 100;
 
-  const filePath = './data/gitHubSolidityRepos.json';
+  console.log(process.argv);
+
+  const filePath = process.argv.length > 2 ? process.argv[2] : './data/gitHubSolidityRepos.json';
   let solidityRepos = {};
   let repos = null;
   const reposWithTest = [];
@@ -127,9 +129,11 @@ console.log(lineGraph.yellow);
     const qtdByExtensao = {
       '.js': {
         qtd: 0,
+        qtdRepos: 0,
       },
       '.sol': {
         qtd: 0,
+        qtdRepos: 0,
       },
     };
     const qtdByQtdArquivosTeste = {
@@ -139,20 +143,26 @@ console.log(lineGraph.yellow);
     repoTruffledWithTests.forEach((r) => {
       let totalArquivos = 0;
       r.testTrees.forEach((t) => {
-        t.children.forEach((f) => {
-          // sum files of repository
-          totalArquivos += 1;
-          // calc by extension
-          if (qtdByExtensao[path.extname(f.path).toLowerCase()] == null) {
-            qtdByExtensao[path.extname(f.path).toLowerCase()] = { qtd: 0 };
-          }
-          qtdByExtensao[path.extname(f.path).toLowerCase()].qtd += 1;
-          // calc by size
-          if (qtdByExtensao[path.extname(f.path).toLowerCase()][f.size] == null) {
-            qtdByExtensao[path.extname(f.path).toLowerCase()][f.size] = 0;
-          }
-          qtdByExtensao[path.extname(f.path).toLowerCase()][f.size] += 1;
-        });
+        if (t.children && Array.isArray(t.children)) {
+          t.children.forEach((f) => {
+            // sum files of repository
+            totalArquivos += 1;
+            // calc by extension
+            if (qtdByExtensao[path.extname(f.path).toLowerCase()] == null) {
+              qtdByExtensao[path.extname(f.path).toLowerCase()] = { qtd: 0, qtdRepos: 0 };
+            }
+            qtdByExtensao[path.extname(f.path).toLowerCase()].qtd += 1;
+            if (r.repo.full_name !== qtdByExtensao[path.extname(f.path).toLowerCase()].ultimoRepositorio) {
+              qtdByExtensao[path.extname(f.path).toLowerCase()].ultimoRepositorio = r.repo.full_name;
+              qtdByExtensao[path.extname(f.path).toLowerCase()].qtdRepos += 1;
+            }
+            // calc by size
+            if (qtdByExtensao[path.extname(f.path).toLowerCase()][f.size] == null) {
+              qtdByExtensao[path.extname(f.path).toLowerCase()][f.size] = 0;
+            }
+            qtdByExtensao[path.extname(f.path).toLowerCase()][f.size] += 1;
+          });
+        }
       });
       if (qtdByQtdArquivosTeste[totalArquivos] == null) {
         qtdByQtdArquivosTeste[totalArquivos] = { qtdRepos: 0, repos: [] };
@@ -167,7 +177,7 @@ console.log(lineGraph.yellow);
     });
     console.log('');
     Object.keys(qtdByExtensao).forEach((ext) => {
-      console.log(`Truffle Testable - files ${ext}:`, qtdByExtensao[ext].qtd, 'files');
+      console.log(`Truffle Testable - files ${ext} `, qtdByExtensao[ext].qtd, 'files', qtdByExtensao[ext].qtdRepos, 'repositories');
     });
 
     /* console.log(
