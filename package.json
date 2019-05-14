@@ -1,7 +1,7 @@
 {
-  "name": "portalwatchclient",
+  "name": "gitresearch",
   "version": "1.0.0",
-  "description": "Utilitário de análise de portais",
+  "description": "Utilitário de análise de repositórios Git",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

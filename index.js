@@ -78,7 +78,11 @@ console.log(lineGraph.yellow);
       console.log(colors.yellow(r.repo.full_name));
       for (const testTree of r.testTrees) {
         console.log(colors.green(testTree.path));
-        const tree = await gitService.getATree({ owner: r.repo.owner.login, repo: r.repo.name, tree_sha: testTree.sha });
+        const tree = await gitService.getATree({
+          owner: r.repo.owner.login,
+          repo: r.repo.name,
+          tree_sha: testTree.sha,
+        });
         tree.forEach((t) => {
           console.log(t.path);
         });
@@ -87,90 +91,18 @@ console.log(lineGraph.yellow);
   } else if (functionality === '2') {
     console.log('#########################  REPOSITORY STATS #########################');
     const reposLoaded = Object.values(solidityRepos);
-    console.log('Total repos:', reposLoaded.length);
-    console.log('');
-    console.log('Total Starred:', reposLoaded.filter(sr => sr.repo.stargazers_count > 0).length);
-    console.log('Total 10+Stars:', reposLoaded.filter(sr => sr.repo.stargazers_count >= 10).length);
-    console.log('Total 50+Stars:', reposLoaded.filter(sr => sr.repo.stargazers_count >= 50).length);
-    console.log('Total 100+Stars:', reposLoaded.filter(sr => sr.repo.stargazers_count >= 100).length);
-    console.log('');
-    console.log('Truffled:', reposLoaded.filter(sr => sr.truffleTrees.length > 0).length);
-    console.log('Truffled Starred:', reposLoaded.filter(sr => sr.truffleTrees.length > 0 && sr.repo.stargazers_count > 0).length);
-    console.log('Truffled 10+Stars:', reposLoaded.filter(sr => sr.truffleTrees.length > 0 && sr.repo.stargazers_count >= 10).length);
-    console.log('Truffled 50+Stars:', reposLoaded.filter(sr => sr.truffleTrees.length > 0 && sr.repo.stargazers_count >= 50).length);
-    console.log('Truffled 100+Stars:', reposLoaded.filter(sr => sr.truffleTrees.length > 0 && sr.repo.stargazers_count >= 100).length);
-    console.log('');
-    const repoWithTests = reposLoaded.filter(sr => sr.testTrees.length > 0);
-    repoWithTests.sort((a, b) => {
-      if (a.repo.stargazers_count < b.repo.stargazers_count) {
-        return 1;
-      }
-      if (a.repo.stargazers_count > b.repo.stargazers_count) {
-        return -1;
-      }
-      // a deve ser igual a b
-      return 0;
-    });
-    console.log('');
-    console.log('Testable:', repoWithTests.length);
-    console.log('Testable Starred:', repoWithTests.filter(sr => sr.repo.stargazers_count > 0).length);
-    console.log('Testable 10+Stars:', repoWithTests.filter(sr => sr.repo.stargazers_count >= 10).length);
-    console.log('Testable 50+Stars:', repoWithTests.filter(sr => sr.repo.stargazers_count >= 50).length);
-    console.log('Testable 100+Stars:', repoWithTests.filter(sr => sr.repo.stargazers_count >= 100).length);
+    printStarStatsTable(reposLoaded, 'Total');
+    printStarStatsTable(reposLoaded.filter(sr => sr.truffleTrees.length > 0), 'Truffled');
+    printStarStatsTable(reposLoaded.filter(sr => sr.testTrees.length > 0), 'Testable');
+
     const repoTruffledWithTests = reposLoaded.filter(sr => sr.testTrees.length > 0 && sr.truffleTrees.length > 0);
-    console.log('');
-    console.log('Truffled Testable:', repoTruffledWithTests.length);
-    console.log('Truffled Testable Starred:', repoTruffledWithTests.filter(sr => sr.repo.stargazers_count > 0).length);
-    console.log('Truffled Testable 10+Stars:', repoTruffledWithTests.filter(sr => sr.repo.stargazers_count >= 10).length);
-    console.log('Truffled Testable 50+Stars:', repoTruffledWithTests.filter(sr => sr.repo.stargazers_count >= 50).length);
-    console.log('Truffled Testable 100+Stars:', repoTruffledWithTests.filter(sr => sr.repo.stargazers_count >= 100).length);
-    console.log('');
+    printStarStatsTable(repoTruffledWithTests, 'Truffled Testable');
+    const repoNOTruffledWithTests = reposLoaded.filter(sr => sr.testTrees.length > 0 && sr.truffleTrees.length == 0);
+    printStarStatsTable(repoNOTruffledWithTests, 'Untruffled Testable');
 
-    const qtdByExtensao = {
-      '.js': {
-        qtd: 0,
-        qtdRepos: 0,
-      },
-      '.sol': {
-        qtd: 0,
-        qtdRepos: 0,
-      },
-    };
-    const qtdByQtdArquivosTeste = {
-      0: { qtdRepos: 0, repos: [] },
-    };
-
-    repoTruffledWithTests.forEach((r) => {
-      let totalArquivos = 0;
-      r.testTrees.forEach((t) => {
-        if (t.children && Array.isArray(t.children)) {
-          t.children.forEach((f) => {
-            // sum files of repository
-            totalArquivos += 1;
-            // calc by extension
-            if (qtdByExtensao[path.extname(f.path).toLowerCase()] == null) {
-              qtdByExtensao[path.extname(f.path).toLowerCase()] = { qtd: 0, qtdRepos: 0 };
-            }
-            qtdByExtensao[path.extname(f.path).toLowerCase()].qtd += 1;
-            if (r.repo.full_name !== qtdByExtensao[path.extname(f.path).toLowerCase()].ultimoRepositorio) {
-              qtdByExtensao[path.extname(f.path).toLowerCase()].ultimoRepositorio = r.repo.full_name;
-              qtdByExtensao[path.extname(f.path).toLowerCase()].qtdRepos += 1;
-            }
-            // calc by size
-            if (qtdByExtensao[path.extname(f.path).toLowerCase()][f.size] == null) {
-              qtdByExtensao[path.extname(f.path).toLowerCase()][f.size] = 0;
-            }
-            qtdByExtensao[path.extname(f.path).toLowerCase()][f.size] += 1;
-          });
-        }
-      });
-      if (qtdByQtdArquivosTeste[totalArquivos] == null) {
-        qtdByQtdArquivosTeste[totalArquivos] = { qtdRepos: 0, repos: [] };
-      }
-      qtdByQtdArquivosTeste[totalArquivos].qtdRepos += 1;
-      qtdByQtdArquivosTeste[totalArquivos].repos.push(r.repo.full_name);
-    });
-
+    // Truffled with Tests
+    let qtdByExtensao = countTestFilesByExtension(repoTruffledWithTests, 'Truffled With Tests');
+    let qtdByQtdArquivosTeste = countReposByTestFilesQuantity(repoTruffledWithTests, 'Truffled With Tests');
     console.log('');
     Object.keys(qtdByQtdArquivosTeste).forEach((qtdFiles) => {
       console.log(`Truffle Testable - ${qtdFiles} files:`, qtdByQtdArquivosTeste[qtdFiles].qtdRepos, 'repositories');
@@ -180,19 +112,17 @@ console.log(lineGraph.yellow);
       console.log(`Truffle Testable - files ${ext} `, qtdByExtensao[ext].qtd, 'files', qtdByExtensao[ext].qtdRepos, 'repositories');
     });
 
-    /* console.log(
-      `######################### 10+ STARS REPOS WITH TEST TREES: ${repoWithTests.filter(sr => sr.repo.stargazers_count >= 10).length} / ${
-        reposLoaded.length
-      } #########################`,
-    );
-    repoWithTests
-      .filter(sr => sr.repo.stargazers_count >= 10)
-      .forEach((r) => {
-        console.log(colors.yellow(r.repo.full_name), colors.blue(r.repo.stargazers_count));
-        console.log('Truffle?', r.truffleTrees.length == 0 ? colors.red('NO') : colors.green('YES'));
-        console.log('Tests Trees:', r.testTrees.length);
-        console.log(r.repo.git_url);
-      }); */
+    // NO Truffled with Tests
+    qtdByExtensao = countTestFilesByExtension(repoNOTruffledWithTests, 'NO Truffled With Tests');
+    qtdByQtdArquivosTeste = countReposByTestFilesQuantity(repoNOTruffledWithTests, 'NO Truffled With Tests');
+    console.log('');
+    Object.keys(qtdByQtdArquivosTeste).forEach((qtdFiles) => {
+      console.log(`NO Truffle Testable - ${qtdFiles} files:`, qtdByQtdArquivosTeste[qtdFiles].qtdRepos, 'repositories');
+    });
+    console.log('');
+    Object.keys(qtdByExtensao).forEach((ext) => {
+      console.log(`NO Truffle Testable - files ${ext} `, qtdByExtensao[ext].qtd, 'files', qtdByExtensao[ext].qtdRepos, 'repositories');
+    });
   } else if (functionality === '1') {
     const filterStars = parseInt(
       readlineSync.question(`Apply filter of star count to search for tests and truffle?
@@ -297,7 +227,9 @@ console.log(lineGraph.yellow);
           }
           solidityRepos[r.full_name].testTrees = searchResult;
 
-          fs.writeFileSync(filePath, JSON.stringify(solidityRepos, null, 4), { encoding: 'UTF8' });
+          fs.writeFileSync(filePath, JSON.stringify(solidityRepos, null, 4), {
+            encoding: 'UTF8',
+          });
         }
 
         // SEARCH FOR FILES 'trufle.js' OR 'trufle-config.js'
@@ -327,7 +259,9 @@ console.log(lineGraph.yellow);
           } else {
             solidityRepos[r.full_name].truffleTrees = searchResult;
           }
-          fs.writeFileSync(filePath, JSON.stringify(solidityRepos, null, 4), { encoding: 'UTF8' });
+          fs.writeFileSync(filePath, JSON.stringify(solidityRepos, null, 4), {
+            encoding: 'UTF8',
+          });
         }
 
         /* if (searchResult.items && searchResult.items.length > 0) {
@@ -348,3 +282,70 @@ console.log(lineGraph.yellow);
     });
   }
 })();
+
+function printStarStatsTable(dataArray, label) {
+  const data = {};
+  data[label] = { qtdRepositories: dataArray.length };
+  data[`${label} Starred:`] = { qtdRepositories: dataArray.filter(sr => sr.repo.stargazers_count > 0).length };
+  data[`${label} 10+Stars:`] = { qtdRepositories: dataArray.filter(sr => sr.repo.stargazers_count >= 10).length };
+  data[`${label} 50+Stars:`] = { qtdRepositories: dataArray.filter(sr => sr.repo.stargazers_count >= 50).length };
+  data[`${label} 100+Stars:`] = { qtdRepositories: dataArray.filter(sr => sr.repo.stargazers_count >= 100).length };
+  console.table(data);
+}
+
+function countTestFilesByExtension(repos) {
+  const qtdByExtensao = {};
+
+  repos.forEach((r) => {
+    let totalFiles = 0;
+    r.testTrees.forEach((t) => {
+      if (t.children && Array.isArray(t.children)) {
+        t.children.forEach((f) => {
+          // sum files of repository
+          totalFiles += 1;
+          // calc by extension
+          if (qtdByExtensao[path.extname(f.path).toLowerCase()] == null) {
+            qtdByExtensao[path.extname(f.path).toLowerCase()] = {
+              qtd: 0,
+              qtdRepos: 0,
+            };
+          }
+          qtdByExtensao[path.extname(f.path).toLowerCase()].qtd += 1;
+          if (r.repo.full_name !== qtdByExtensao[path.extname(f.path).toLowerCase()].ultimoRepositorio) {
+            qtdByExtensao[path.extname(f.path).toLowerCase()].ultimoRepositorio = r.repo.full_name;
+            qtdByExtensao[path.extname(f.path).toLowerCase()].qtdRepos += 1;
+          }
+        });
+      }
+    });
+  });
+  return qtdByExtensao;
+}
+
+function countReposByTestFilesQuantity(repos) {
+  const qtdByQtdArquivosTeste = {};
+
+  repos.forEach((r) => {
+    let totalFiles = 0;
+    r.testTrees.forEach((t) => {
+      if (t.children && Array.isArray(t.children)) {
+        totalFiles += t.children.length;
+      }
+    });
+    if (qtdByQtdArquivosTeste[totalFiles] == null) {
+      qtdByQtdArquivosTeste[totalFiles] = { qtdRepos: 0, repos: [] };
+    }
+    qtdByQtdArquivosTeste[totalFiles].qtdRepos += 1;
+    qtdByQtdArquivosTeste[totalFiles].repos.push(r.repo.full_name);
+  });
+  return qtdByQtdArquivosTeste;
+}
+
+function printStarStats(dataArray, label) {
+  console.log(label, ':', dataArray.length);
+  console.log(`${label} Starred:`, dataArray.filter(sr => sr.repo.stargazers_count > 0).length);
+  console.log(`${label} 10+Stars:`, dataArray.filter(sr => sr.repo.stargazers_count >= 10).length);
+  console.log(`${label} 50+Stars:`, dataArray.filter(sr => sr.repo.stargazers_count >= 50).length);
+  console.log(`${label} 100+Stars:`, dataArray.filter(sr => sr.repo.stargazers_count >= 100).length);
+  console.log('');
+}
