@@ -398,23 +398,30 @@ function cloneAndInstall(repos, index, cloneNext) {
       // npm install
       const cwd = path.resolve('researchRepos', path.join(repos[index].repo.full_name, path.join(repos[index].testTrees[0].path), '..'));
       console.log('cwd', cwd);
-      const childProcNpm = spawn('npm', ['install'], { cwd });
-      // Saídas de erro e padrão
-      handleChildProc(childProcNpm, repos[index].repo.full_name);
-      // trata saída
-      childProcNpm.on('exit', async (code, signal) => {
-        if (code === 0 && signal == null) {
-          console.log(colors.green(`Concluído npm install ${repos[index].repo.full_name}`));
-        } else {
-          console.warn(colors.yellow(`Erro onExit npm install ${repos[index].repo.full_name}. Verifique o console para identificar a causa`));
-        }
+      if (fs.existsSync(cwd)) {
+        const childProcNpm = spawn('npm', ['install'], { cwd });
+        // Saídas de erro e padrão
+        handleChildProc(childProcNpm, repos[index].repo.full_name);
+        // trata saída
+        childProcNpm.on('exit', async (code, signal) => {
+          if (code === 0 && signal == null) {
+            console.log(colors.green(`Concluído npm install ${repos[index].repo.full_name}`));
+          } else {
+            console.warn(colors.yellow(`Erro onExit npm install ${repos[index].repo.full_name}. Verifique o console para identificar a causa`));
+          }
+          if (cloneNext) {
+            cloneAndInstall(repos, index + 1, true);
+          }
+        });
+        /* if (cloneNext) {
+        cloneAndInstall(repos, index + 1, true);
+      } */
+      } else {
+        console.log(colors.magenta(`${cwd} não existe e o install não foi possível`));
         if (cloneNext) {
           cloneAndInstall(repos, index + 1, true);
         }
-      });
-      /* if (cloneNext) {
-        cloneAndInstall(repos, index + 1, true);
-      } */
+      }
     });
   }
 }
