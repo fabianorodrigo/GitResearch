@@ -46,11 +46,11 @@ printCentro('Github Solidity Research');
 console.log(lineGraph.yellow);
 
 (async () => {
-  const filePath = process.argv.length > 2 ? process.argv[2] : './data/gitHubSolidityRepos.json';
+  const filePathRepositoriesData = process.argv.length > 2 ? process.argv[2] : './data/gitHubSolidityRepos.json';
   let solidityRepos = {};
 
-  if (fs.existsSync(filePath)) {
-    solidityRepos = JSON.parse(fs.readFileSync(filePath, { encoding: 'UTF8' }));
+  if (fs.existsSync(filePathRepositoriesData)) {
+    solidityRepos = JSON.parse(fs.readFileSync(filePathRepositoriesData, { encoding: 'UTF8' }));
   }
 
   const functionality = readlineSync.question(`What do you want to do?
@@ -58,12 +58,13 @@ console.log(lineGraph.yellow);
   2. Analyse local data
   3. Detail truffled testable
   4. Clone all truffled testable repositories
+  5. Execute tests
 
   Your choice: `);
 
   if (functionality === '4') {
     const repoTruffledWithTests = Object.values(solidityRepos).filter(sr => sr.testTrees.length > 0 && sr.truffleTrees.length > 0);
-    clone(repoTruffledWithTests, 0, true);
+    cloneAndInstall(repoTruffledWithTests, 0, true);
   } else if (functionality === '3') {
     detailTruffleTestable(solidityRepos);
   } else if (functionality === '2') {
@@ -375,48 +376,130 @@ async function retrieveGithubData() {
 }
 
 /**
- * Clone the repository referenced in {solidityRepos} in the position {index}
+ * Clone the repository referenced in {solidityRepos} in the position {index} and executes 'npm install'
  *
  * @param {Array} repos Collection of github repos
  * @param {number} index Position of the {solidityRepos} to be cloned
  * @param {boolean} cloneNext If TRUE, when finished the clone, will call the function again passsing {index}+1
  */
-function clone(repos, index, cloneNext) {
+function cloneAndInstall(repos, index, cloneNext) {
   if (index >= repos.length) {
   } else {
-    const childProc = spawn('git', ['clone', repos[index].repo.clone_url, `researchRepos/${repos[index].repo.full_name}`]);
-    // Tratamento de erro
-    childProc.on('error', (error) => {
-      console.error(colors.red(`${repos[index].repo.full_name} Falhou no onError`), error);
-    });
-    // Saída de erro
-    childProc.stderr.on('data', (data) => {
-      data = data.toString().split(/(\r?\n)/g);
-      data.forEach((item, i) => {
-        if (data[i] !== '\n' && data[i] !== '') {
-          console.error(colors.yellow(`${repos[index].repo.full_name}`), colors.yellow(data[i]));
-        }
-      });
-    });
-    // Saída padrão
-    childProc.stdout.on('data', (data) => {
-      data = data.toString().split(/(\r?\n)/g);
-      data.forEach((item, i) => {
-        if (data[i] !== '\n' && data[i] !== '') {
-          console.log(repos[index].repo.full_name, data[i]);
-        }
-      });
-    });
-    // Tratamento saída
-    childProc.on('exit', async (code, signal) => {
+    const childProcGit = spawn('git', ['clone', repos[index].repo.clone_url, `researchRepos/${repos[index].repo.full_name}`]);
+    // Saídas de erro e padrão
+    handleChildProc(childProcGit, repos[index].repo.full_name);
+    // trata saída
+    childProcGit.on('exit', async (code, signal) => {
       if (code === 0 && signal == null) {
-        console.log(colors.green(`Concluído ${repos[index].repo.full_name}`));
+        console.log(colors.green(`Concluído Git ${repos[index].repo.full_name}`));
       } else {
-        console.warn(colors.yellow(`Erro onExit ${repos[index].repo.full_name}. Verifique o console para identificar a causa`));
+        console.warn(colors.yellow(`Erro onExit Git ${repos[index].repo.full_name}. Verifique o console para identificar a causa`));
       }
-      if (cloneNext) {
-        clone(repos, index + 1, true);
+      // npm install
+      const cwd = path.resolve('researchRepos', path.join(repos[index].repo.full_name, path.join(repos[index].testTrees[0].path), '..'));
+      console.log('cwd', cwd);
+      const childProcNpm = spawn('npm', ['install'], { cwd });
+      // Saídas de erro e padrão
+      handleChildProc(childProcNpm, repos[index].repo.full_name);
+      // trata saída
+      childProcNpm.on('exit', async (code, signal) => {
+        if (code === 0 && signal == null) {
+          console.log(colors.green(`Concluído npm install ${repos[index].repo.full_name}`));
+        } else {
+          console.warn(colors.yellow(`Erro onExit npm install ${repos[index].repo.full_name}. Verifique o console para identificar a causa`));
+        }
+        if (cloneNext) {
+          cloneAndInstall(repos, index + 1, true);
+        }
+      });
+      /* if (cloneNext) {
+        cloneAndInstall(repos, index + 1, true);
+      } */
+    });
+  }
+}
+
+function handleChildProc(childProc, repoFullName) {
+  // Tratamento de erro
+  childProc.on('error', (error) => {
+    console.error(colors.red(`${repoFullName} Falhou no onError`), error);
+  });
+
+  // trata saída de erro
+  childProc.stderr.on('data', (data) => {
+    data = data.toString().split(/(\r?\n)/g);
+    data.forEach((item, i) => {
+      if (data[i] !== '\n' && data[i] !== '') {
+        console.error(colors.yellow(`${repoFullName}`), colors.yellow(data[i]));
       }
+    });
+  });
+  // Saída padrão
+  childProc.stdout.on('data', (data) => {
+    data = data.toString().split(/(\r?\n)/g);
+    data.forEach((item, i) => {
+      if (data[i] !== '\n' && data[i] !== '') {
+        console.log(repoFullName, data[i]);
+      }
+    });
+  });
+}
+
+/**
+ * Execute 'truffle test' referenced in {solidityRepos} in the position {index}
+ *
+ * @param {Array} repos Collection of github repos
+ * @param {number} index Position of the {solidityRepos} to be cloned
+ * @param {boolean} testNext If TRUE, when finished the clone, will call the function again passsing {index}+1
+ */
+function executeTruffleTests(repos, index, testNext) {
+  const filePathTestsData = process.argv.length > 2 ? process.argv[2] : './data/tests.json';
+  const testData = fs.readFileSync(filePathTestsData, { encoding: 'UTF8' });
+  if (index < repos.length) {
+    repos[index].testTrees.forEach((t) => {
+      if (!Object.prototype.hasOwnProperty.call(testData, repos[index].repo.full_name)) {
+        testData[repos[index].repo.full_name] = {
+          full_name: repos[index].repo.full_name,
+        };
+      }
+      // parent directory of tests
+      testData[repos[index].repo.full_name].testStart = new Date();
+      testData[repos[index].repo.full_name].errors = [];
+      testData[repos[index].repo.full_name].stdErrorEvents = [];
+      testData[repos[index].repo.full_name].stdOutEvents = [];
+      const cwd = path.resolve(path.join(repos[index].repo.full_name, t.path), '..');
+      const childProcTruffle = spawn('truffle', ['test'], { cwd });
+      // Tratamento de erro
+      childProcTruffle.on('error', (error) => {
+        testData[repos[index].repo.full_name].errors.push(error);
+        fs.writeFileSync(filePathTestsData, testData, { encoding: 'UTF8' });
+      });
+
+      // trata saída de erro
+      childProcTruffle.stderr.on('data', (data) => {
+        testData[repos[index].repo.full_name].stdErrorEvents.push(data);
+        fs.writeFileSync(filePathTestsData, testData, { encoding: 'UTF8' });
+      });
+      // Saída padrão
+      childProcTruffle.stdout.on('data', (data) => {
+        testData[repos[index].repo.full_name].stdOutEvents.push(data);
+        fs.writeFileSync(filePathTestsData, testData, { encoding: 'UTF8' });
+      });
+      // trata saída
+      childProcTruffle.on('exit', async (code, signal) => {
+        testData[repos[index].repo.full_name].testFinish = new Date();
+        testData[repos[index].repo.full_name].testExitCode = code;
+        testData[repos[index].repo.full_name].testExitSignal = signal;
+        if (code === 0 && signal == null) {
+          console.log(colors.green(`Concluído test ${repos[index].repo.full_name}`));
+        } else {
+          console.warn(colors.yellow(`Erro onExit test ${repos[index].repo.full_name}. Verifique o console para identificar a causa`));
+        }
+        fs.writeFileSync(filePathTestsData, testData, { encoding: 'UTF8' });
+        if (testNext) {
+          executeTruffleTests(repos, index + 1, true);
+        }
+      });
     });
   }
 }
