@@ -61,6 +61,7 @@
     "cybrtoken": "file:researchRepos/CYBRToken/CYBRToken",
     "dapp-trust": "file:researchRepos/MyBitFoundation/MyBit-Trust.tech",
     "debug-solidity": "file:researchRepos/kern/debug-solidity",
+    "dotenv": "^8.0.0",
     "dropbox": "^2.5.13",
     "dubiex": "file:researchRepos/oberon2410/dubiex",
     "electusaction": "file:researchRepos/chaitanyapotti/Action",

@@ -1,77 +1,63 @@
 const fs = require('fs');
 const path = require('path');
 const colors = require('colors');
-const bunyan = require('bunyan');
-const RotatingFileStream = require('bunyan-rotating-file-stream');
+const loaders = require('./loaders');
 const readlineSync = require('readline-sync');
-const SolidityParser = require('./SolidityParser');
 const { spawn } = require('child_process');
 
+const SolidityParser = require('./SolidityParser');
+const SolidityTruffleUtilsFactory = require('./factories/SolidityTruffleUtilsFactory');
+
+loaders.init();
 const GitHubService = require('./GitHubService');
-
-const logOptions = {
-  name: '/queriesAvulsas',
-  streams: [
-    {
-      stream: new RotatingFileStream({
-        level: 'debug',
-        path: 'logs/log%Y%m%d.json',
-        period: '1d', // daily rotation
-        totalFiles: 10, // keep up to 10 back copies
-        rotateExisting: true, // Give ourselves a clean file when we start up, based on period
-        threshold: '10m', // Rotate log files larger than 10 megabytes
-        totalSize: '20m', // Don't keep more than 20mb of archived log files
-        gzip: true, // Compress the archive log files to save space
-        src: true, // Include info about the source of the error
-      }),
-    },
-  ],
-};
-
-global.log = bunyan.createLogger(logOptions);
-const WIDTH = 150;
-global.trace = true;
-function printCentro(valor) {
-  console.log(
-    valor.padStart(Math.floor(WIDTH / 2 + valor.length / 2), ' ').yellow,
-  );
-}
-
-process.on('uncaughtException', err => {
-  global.log.error(err);
-  console.error(`Caught exception: ${err}\n`);
-  console.error(err.stack);
-});
-
-const lineGraph = '#'.padStart(WIDTH, '#');
-console.log(lineGraph.yellow);
-printCentro('Github Solidity Research');
-console.log(lineGraph.yellow);
+const targetCloneDir =
+  '/home/fabianorodrigo/Projetos/ProjetosTerceiros/github/Solidity/GitResearchRepos';
 
 (async () => {
+  // Dados de todos os repositórios Solidity
   const filePathRepositoriesData =
     process.argv.length > 2
       ? process.argv[2]
       : './data/gitHubSolidityRepos.json';
   let solidityRepos = {};
-
   if (fs.existsSync(filePathRepositoriesData)) {
     solidityRepos = JSON.parse(
       fs.readFileSync(filePathRepositoriesData, { encoding: 'UTF8' }),
     );
   }
 
+  // Dados sobre os repositórios e projetos escopo da pesquisa
+  const filePathResearchData = './data/researchScopeData.json';
+  let researchData = {};
+  if (fs.existsSync(filePathResearchData)) {
+    researchData = JSON.parse(
+      fs.readFileSync(filePathResearchData, { encoding: 'UTF8' }),
+    );
+  }
+
   const functionality = readlineSync.question(`What do you want to do?
-  1. Retrieve/update local data from Github
-  2. Analyse local data
-  3. Detail truffled testable
-  4. Clone all truffled testable repositories
+  1. Retrieve/update local Solidity repositories data from Github
+  2. Analyse Solidity repositories local data
+  3. Detail truffled testable Solidity Repositories
+  4. Clone all truffled testable Solidity repositories
+
   5. Compile
   6. Execute Tests
+  7. Show Test Results
+
+  10. Rollback truffles-config.js
 
   Your choice: `);
 
-  if (functionality === '5') {
+  if (functionality === '10') {
+    rollbackTrufflesConfig(
+      Object.values(solidityRepos).filter(
+        sr => sr.testTrees.length > 0 && sr.truffleTrees.length > 0,
+      ),
+    );
+  } else if (functionality === '7') {
+    detailTestResults();
+  } else if (functionality === '5') {
     const repoTruffledWithTests = Object.values(solidityRepos).filter(
       sr => sr.testTrees.length > 0 && sr.truffleTrees.length > 0,
     );
@@ -80,7 +66,11 @@ console.log(lineGraph.yellow);
     const repoTruffledWithTests = Object.values(solidityRepos).filter(
       sr => sr.testTrees.length > 0 && sr.truffleTrees.length > 0,
     );
-    cloneAndInstall(repoTruffledWithTests, 0, true);
+    const solidityTruffleUtils = SolidityTruffleUtilsFactory({
+      repos: repoTruffledWithTests,
+      targetCloneDir,
+    });
+    await solidityTruffleUtils.cloneAndInstall(0, true);
   } else if (functionality === '3') {
     detailTruffleTestable(solidityRepos);
   } else if (functionality === '2') {
@@ -302,7 +292,7 @@ function printStarStats(dataArray, label) {
 async function retrieveGithubData() {
   const gitService = new GitHubService();
 
-  const page = 0;
+  let page = 0;
   const perPage = 100;
 
   const filePath =
@@ -310,7 +300,7 @@ async function retrieveGithubData() {
       ? process.argv[2]
       : './data/gitHubSolidityRepos.json';
   const solidityRepos = {};
-  const repos = null;
+  let repos = null;
   const reposWithTest = [];
 
   const filterStars = parseInt(
@@ -505,132 +495,20 @@ async function retrieveGithubData() {
 }
 
 /**
- * Clone the repository referenced in {solidityRepos} in the position {index} and executes 'npm install'
- *
- * @param {Array} repos Collection of github repos
- * @param {number} index Position of the {solidityRepos} to be cloned
- * @param {boolean} cloneNext If TRUE, when finished the clone, will call the function again passsing {index}+1
- */
-function cloneAndInstall(repos, index, cloneNext) {
-  if (index >= repos.length) {
-  } else {
-    const childProcGit = spawn('git', [
-      'clone',
-      repos[index].repo.clone_url,
-      `researchRepos/${repos[index].repo.full_name}`,
-    ]);
-    // Saídas de erro e padrão
-    handleChildProc(childProcGit, repos[index].repo.full_name);
-    // trata saída
-    childProcGit.on('exit', async (code, signal) => {
-      if (code === 0 && signal == null) {
-        console.log(
-          colors.green(`Concluído Git ${repos[index].repo.full_name}`),
-        );
-      } else {
-        console.warn(
-          colors.yellow(
-            `Erro onExit Git ${
-              repos[index].repo.full_name
-            }. Verifique o console para identificar a causa`,
-          ),
-        );
-      }
-      // npm install
-      const cwd = path.resolve(
-        'researchRepos',
-        path.join(
-          repos[index].repo.full_name,
-          path.join(repos[index].testTrees[0].path),
-          '..',
-        ),
-      );
-      console.log('cwd', cwd);
-      if (fs.existsSync(cwd)) {
-        const childProcNpm = spawn('npm', ['install'], { cwd });
-        // Saídas de erro e padrão
-        handleChildProc(childProcNpm, repos[index].repo.full_name);
-        // trata saída
-        childProcNpm.on('exit', async (code, signal) => {
-          if (code === 0 && signal == null) {
-            console.log(
-              colors.green(
-                `Concluído npm install ${repos[index].repo.full_name}`,
-              ),
-            );
-          } else {
-            console.warn(
-              colors.yellow(
-                `Erro onExit npm install ${
-                  repos[index].repo.full_name
-                }. Verifique o console para identificar a causa`,
-              ),
-            );
-          }
-          if (cloneNext) {
-            cloneAndInstall(repos, index + 1, true);
-          }
-        });
-        /* if (cloneNext) {
-        cloneAndInstall(repos, index + 1, true);
-      } */
-      } else {
-        console.log(
-          colors.magenta(`${cwd} não existe e o install não foi possível`),
-        );
-        if (cloneNext) {
-          cloneAndInstall(repos, index + 1, true);
-        }
-      }
-    });
-  }
-}
-
-function handleChildProc(childProc, repoFullName) {
-  // Tratamento de erro
-  childProc.on('error', error => {
-    console.error(colors.red(`${repoFullName} Falhou no onError`), error);
-  });
-
-  // trata saída de erro
-  childProc.stderr.on('data', data => {
-    data = data.toString().split(/(\r?\n)/g);
-    data.forEach((item, i) => {
-      if (data[i] !== '\n' && data[i] !== '') {
-        console.error(colors.yellow(`${repoFullName}`), colors.yellow(data[i]));
-      }
-    });
-  });
-  // Saída padrão
-  childProc.stdout.on('data', data => {
-    data = data.toString().split(/(\r?\n)/g);
-    data.forEach((item, i) => {
-      if (data[i] !== '\n' && data[i] !== '') {
-        console.log(repoFullName, data[i]);
-      }
-    });
-  });
-}
-
-/**
  * Execute 'truffle compile' referenced in {solidityRepos} in the position {index}
  *
  * @param {Array} repos Collection of github repos
  * @param {number} index Position of the {solidityRepos} to be compiled
- * @param {number} indexTestTree Position of the {solidityRepos.testTree} to be compiled
+ * @param {number} indexTruffleTree Position of the {solidityRepos.truffleTree} to be compiled
  * @param {boolean} compileNext If TRUE, when finished the compilation, will call the function again passsing {index}+1
  */
-function executeTruffleCompile(repos, index, indexTestTree, compileNext) {
-  const filePathTestsData =
-    process.argv.length > 2 ? process.argv[2] : './data/tests.json';
-  const testData = JSON.parse(
-    fs.readFileSync(filePathTestsData, { encoding: 'UTF8' }),
-  );
+function executeTruffleCompile(repos, index, indexTruffleTree, compileNext) {
   if (index < repos.length) {
-    if (indexTestTree < repos[index].testTrees.length) {
-      const t = repos[index].testTrees[indexTestTree];
+    if (indexTruffleTree < repos[index].truffleTrees.length) {
+      const t = repos[index].truffleTrees[indexTruffleTree];
       const key = `${repos[index].repo.full_name}/${t.path}`;
       testData[key] = {
+        key: key,
         full_name: repos[index].repo.full_name,
         path: t.path,
         compileStart: new Date(),
@@ -638,12 +516,12 @@ function executeTruffleCompile(repos, index, indexTestTree, compileNext) {
         compileStdErrorEvents: [],
         compileStdOutEvents: [],
       };
-      const cwd = path.resolve(
-        'researchRepos',
-        path.join(repos[index].repo.full_name, t.path),
-        '..',
+      const cwd = path.join(
+        targetCloneDir,
+        repos[index].repo.full_name,
+        path.dirname(t.path),
       );
-      updateTruffleConfig(cwd);
+      testData[key].solcVersion = updateTruffleConfig(cwd);
       const childProcTruffle = spawn('truffle', ['compile'], { cwd });
       // Tratamento de erro
       childProcTruffle.on('error', error => {
@@ -685,7 +563,7 @@ function executeTruffleCompile(repos, index, indexTestTree, compileNext) {
           encoding: 'UTF8',
         });
         if (compileNext) {
-          executeTruffleCompile(repos, index, indexTestTree + 1, true);
+          executeTruffleCompile(repos, index, indexTruffleTree + 1, true);
         }
       });
     } else {
@@ -694,61 +572,96 @@ function executeTruffleCompile(repos, index, indexTestTree, compileNext) {
   }
 }
 
-function updateTruffleConfig(projectHomePath) {
-  let truffleConfigPath = null;
-  if (fs.existsSync(path.join(projectHomePath, 'truffle-config.js'))) {
-    truffleConfigPath = path.join(projectHomePath, 'truffle-config.js');
-  } else if (fs.existsSync(path.join(projectHomePath, 'truffle.js'))) {
-    truffleConfigPath = path.join(projectHomePath, 'truffle.js');
-  }
-  if (truffleConfigPath != null) {
-    let truffleConfigContent = fs.readFileSync(truffleConfigPath, {
-      encoding: 'UTF8',
-    });
-    // If compiler version not specified in the truffle configuration
-    if (truffleConfigContent.indexOf('compilers') === -1) {
-      const solidityVersionNode = getContractsCompilerVersion(projectHomePath);
-      if (solidityVersionNode != null) {
-        const compiler = `${
-          truffleConfigContent.indexOf('networks') > -1 ? ',' : ''
+function rollbackTrufflesConfig(repos) {
+  repos.forEach(r => {
+    r.truffleTrees.forEach(tt => {
+      const cwd = path.join(
+        targetCloneDir,
+        r.repo.full_name,
+        path.dirname(tt.path),
+      );
+
+      let truffleConfigPath = null;
+      if (fs.existsSync(path.join(cwd, 'truffle-config.js'))) {
+        truffleConfigPath = path.join(cwd, 'truffle-config.js');
+      } else if (fs.existsSync(path.join(cwd, 'truffle.js'))) {
+        truffleConfigPath = path.join(cwd, 'truffle.js');
+      }
+      if (truffleConfigPath != null) {
+        if (fs.existsSync(`${truffleConfigPath}.bkp`)) {
+          fs.copyFileSync(`${truffleConfigPath}.bkp`, truffleConfigPath);
         }
+        console.log(`${truffleConfigPath}.bkp`, 'APAGADO'.yellow);
+      } else {
+        console.log(`${truffleConfigPath} NÃO ENCONTRADO`.red);
+      }
+    });
+  });
+}
+
+function updateTruffleConfig(projectHomePath) {
+  let result = null;
+  try {
+    let truffleConfigPath = null;
+    if (fs.existsSync(path.join(projectHomePath, 'truffle-config.js'))) {
+      truffleConfigPath = path.join(projectHomePath, 'truffle-config.js');
+    } else if (fs.existsSync(path.join(projectHomePath, 'truffle.js'))) {
+      truffleConfigPath = path.join(projectHomePath, 'truffle.js');
+    }
+    if (truffleConfigPath != null) {
+      let truffleConfigContent = fs.readFileSync(truffleConfigPath, {
+        encoding: 'UTF8',
+      });
+      // If compiler version not specified in the truffle configuration
+      if (truffleConfigContent.indexOf('compilers') === -1) {
+        const solidityVersionNode = getContractsCompilerVersion(
+          projectHomePath,
+        );
+        if (solidityVersionNode != null) {
+          let compiler = `
   compilers: {
     solc: {
       version: "${solidityVersionNode.value}",
     }
-  }`;
-        const position = truffleConfigContent.lastIndexOf('}');
-        truffleConfigContent = [
-          truffleConfigContent.slice(0, position),
-          compiler,
-          truffleConfigContent.slice(position),
-        ].join('');
-        fs.writeFileSync(truffleConfigPath, truffleConfigContent, {
-          encoding: 'UTF8',
-        });
-      }
-    } else {
-      console.log(`${truffleConfigPath}`.green, truffleConfigContent);
-    }
   }
+  `;
+          result = solidityVersionNode.value;
+          const position = truffleConfigContent.lastIndexOf('}');
+
+          if (
+            truffleConfigContent.indexOf('networks') > -1 &&
+            truffleConfigContent[position - 1] != ',' &&
+            truffleConfigContent[position - 2] != ','
+          ) {
+            compiler = ',\n'.concat(compiler);
+          }
+          truffleConfigContent = [
+            truffleConfigContent.slice(0, position),
+            compiler,
+            truffleConfigContent.slice(position),
+          ].join('');
+          fs.copyFileSync(truffleConfigPath, `${truffleConfigPath}.bkp`);
+          fs.writeFileSync(truffleConfigPath, truffleConfigContent, {
+            encoding: 'UTF8',
+          });
+        }
+      } else {
+        console.log(`${truffleConfigPath}`.green);
+      }
+    }
+  } catch (e) {
+    console.log(colors.red(e.message), e);
+  }
+  return result;
 }
 
 function getContractsCompilerVersion(projectHomePath) {
   const contractsDir = path.join(projectHomePath, 'contracts');
   if (fs.existsSync(contractsDir)) {
-    //TODO: Tem que analisar subdiretórios
-    const files = fs.readdirSync(contractsDir);
+    const solidityFiles = getAllSolidityFiles(contractsDir);
     let versions = [];
     //take just the first solidity file
-    for (const fileSol of files) {
-      if (path.extname(fileSol).toLowerCase() === '.sol') {
-        versions = SolidityParser.getSolidityVersions(
-          path.join(contractsDir, files[0]),
-        );
-        break;
-      }
-    }
-    console.log(versions);
+    versions = SolidityParser.getSolidityVersions(solidityFiles[0]);
     if (versions == null) {
       console.log(
         colors.red(`No Solidity Files in ${contractsDir}`),
@@ -778,6 +691,20 @@ function getContractsCompilerVersion(projectHomePath) {
   }
 }
 
+function getAllSolidityFiles(contractsDir) {
+  let result = [];
+  const items = fs.readdirSync(contractsDir);
+  for (const fileSol of items) {
+    const itemPath = path.join(contractsDir, fileSol);
+    if (fs.lstatSync(itemPath).isDirectory()) {
+      result = result.concat(getAllSolidityFiles(itemPath));
+    } else if (path.extname(fileSol).toLowerCase() === '.sol') {
+      result.push(itemPath);
+    }
+  }
+  return result;
+}
+
 /**
  * Execute 'truffle test' referenced in {solidityRepos} in the position {index}
  *
@@ -786,9 +713,6 @@ function getContractsCompilerVersion(projectHomePath) {
  * @param {boolean} testNext If TRUE, when finished the clone, will call the function again passsing {index}+1
  */
 function executeTruffleTests(repos, index, testNext) {
-  const filePathTestsData =
-    process.argv.length > 2 ? process.argv[2] : './data/tests.json';
-  const testData = fs.readFileSync(filePathTestsData, { encoding: 'UTF8' });
   if (index < repos.length) {
     repos[index].testTrees.forEach(t => {
       if (
@@ -807,7 +731,7 @@ function executeTruffleTests(repos, index, testNext) {
       testData[repos[index].repo.full_name].testStdErrorEvents = [];
       testData[repos[index].repo.full_name].testStdOutEvents = [];
       const cwd = path.resolve(
-        'researchRepos',
+        targetCloneDir,
         path.join(
           repos[index].repo.full_name,
           path.join(repos[index].testTrees[0].path),
@@ -856,4 +780,29 @@ function executeTruffleTests(repos, index, testNext) {
       });
     });
   }
+}
+
+function detailTestResults() {
+  for (const r of testData) {
+    let resultado = '';
+    if (r.compileExitCode !== 0) {
+      const stdOutError = r.compileStdOutEvents.filter(item =>
+        item.startsWith('Error'),
+      );
+      if (stdOutError.length > 0) {
+        resultado = stdOutError[0];
+        if (resultado.indexOf('\n') !== -1) {
+          resultado = resultado.split('\n')[0];
+        }
+      }
+    }
+
+    data[path.dirname(r.key)] = {
+      solcVersion: r.solcVersion,
+      compilado: r.compileExitCode === 0,
+      DataCompilacao: r.compileFinish,
+      Resultado: resultado,
+    };
+  }
+  console.table(data);
 }
