@@ -16,6 +16,13 @@
       "type": "node",
       "request": "launch",
       "program": "${workspaceFolder}/indexSingle.js"
+    },
+    {
+      "name": "Debug indexMenu",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/indexmenu.js",
+      "console": "integratedTerminal"
     }
   ]
 }

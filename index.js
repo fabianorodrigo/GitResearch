@@ -4,302 +4,321 @@ const colors = require('colors');
 const loaders = require('./loaders');
 const readlineSync = require('readline-sync');
 const { spawn } = require('child_process');
-
-const SolidityParser = require('./SolidityParser');
-const SolidityTruffleUtilsFactory = require('./factories/SolidityTruffleUtilsFactory');
+const queries = require('./queries');
+const repositories = require('./repositories');
 
 loaders.init();
-const GitHubService = require('./GitHubService');
-const targetCloneDir =
-  '/home/fabianorodrigo/Projetos/ProjetosTerceiros/github/Solidity/GitResearchRepos';
+
+const SolidityTruffleUtilsFactory = require('./factories/SolidityTruffleUtilsFactory');
+const ResultsQueryFactory = require('./factories/ResultsQueryFactory');
+const GitHubService = require('./factories/GitHubService');
+
+let targetCloneDir = process.env.SOLIDITY_REPOS_DIRECTORY;
+
+const targets = fs.readdirSync('./data');
+targets.forEach((target, i) => {
+  console.log(i, target);
+});
+let tpd = null;
+while (tpd == null || isNaN(parseInt(tpd)) || parseInt(tpd) >= targets.length) {
+  tpd = readlineSync.question(`Select your target projects directory: `);
+}
+
+targetCloneDir = path.join(targetCloneDir, targets[tpd]);
+const dateRef = new Date(
+  `${targets[tpd].substr(0, 4)}-${targets[tpd].substr(4, 2)}-${targets[
+    tpd
+  ].substr(6, 2)}`,
+);
 
 (async () => {
   // Dados de todos os repositórios Solidity
-  const filePathRepositoriesData =
-    process.argv.length > 2
-      ? process.argv[2]
-      : './data/gitHubSolidityRepos.json';
+  const filePathRepositoriesData = `./data/${
+    targets[tpd]
+  }/gitHubSolidityRepos.json`;
+  const filePathResearchData = `./data/${targets[tpd]}/researchScopeData.json`;
   let solidityRepos = {};
   if (fs.existsSync(filePathRepositoriesData)) {
     solidityRepos = JSON.parse(
       fs.readFileSync(filePathRepositoriesData, { encoding: 'UTF8' }),
     );
+  } else if (!fs.existsSync(path.dirname(filePathRepositoriesData))) {
+    fs.mkdirSync(path.dirname(filePathRepositoriesData));
   }
 
-  // Dados sobre os repositórios e projetos escopo da pesquisa
-  const filePathResearchData = './data/researchScopeData.json';
-  let researchData = {};
-  if (fs.existsSync(filePathResearchData)) {
-    researchData = JSON.parse(
-      fs.readFileSync(filePathResearchData, { encoding: 'UTF8' }),
+  const repoTruffledWithTests = Object.values(solidityRepos).filter(
+    sr => sr.testTrees.length > 0 && sr.truffleTrees.length > 0,
+  );
+  const solidityTruffleUtils = SolidityTruffleUtilsFactory({
+    repos: repoTruffledWithTests,
+    targetCloneDir,
+    filePathResearchData,
+  });
+  const resultsQuery = ResultsQueryFactory({
+    repos: repoTruffledWithTests,
+    filePathResearchData,
+  });
+
+  showMenu();
+
+  async function showMenu() {
+    const menu = JSON.parse(
+      fs.readFileSync('./menu.json', { encoding: 'UTF8' }),
+    );
+    let choice = null;
+    Object.keys(menu)
+      .sort((a, b) => {
+        return parseInt(a) - parseInt(b);
+      })
+      .forEach(key => {
+        if (menu[key].text != null) {
+          console.log(key, '.', menu[key].text);
+        } else {
+          console.log('');
+        }
+      });
+    console.log('0 . Back');
+    choice = readlineSync.question(`Choose a option:`);
+    const typeofChoice = eval('typeof _'.concat(choice));
+    if (typeofChoice == 'function') {
+      const choiceFn = eval('_'.concat(choice));
+      await choiceFn();
+    }
+  }
+
+  async function _1() {
+    const solidityRepos = {};
+    await retrieveGithubData(
+      filePathRepositoriesData,
+      'created:<2019-01-01',
+      solidityRepos,
+    );
+    await retrieveGithubData(
+      filePathRepositoriesData,
+      'created:>=2019-01-01',
+      solidityRepos,
     );
   }
+  function _2() {
+    repositories(solidityRepos, dateRef);
+  }
 
-  const functionality = readlineSync.question(`What do you want to do?
-  1. Retrieve/update local Solidity repositories data from Github
-  2. Analyse Solidity repositories local data
-  3. Detail truffled testable Solidity Repositories
-  4. Clone all truffled testable Solidity repositories
+  async function _3() {
+    await solidityTruffleUtils.cloneAndInstall(0, true, showMenu);
+  }
+  function _4() {
+    solidityTruffleUtils.prepareTruffleConfig();
+    showMenu();
+  }
+  async function _5() {
+    await solidityTruffleUtils.compile(0, 0, true, true, null, showMenu);
+  }
+  async function _6() {
+    const previousCompilationResult = readlineSync
+      .question('List: (s)uccessfull / (f)ailed / (A)ll ')
+      .toUpperCase();
+    let successFilter = null;
+    if (previousCompilationResult === 'S') {
+      successFilter = true;
+    } else if (previousCompilationResult === 'F') {
+      successFilter = false;
+    }
+    const result = resultsQuery.showResults(
+      'compile',
+      true,
+      successFilter,
+      null,
+    );
 
-  5. Compile
-  6. Execute Tests
-  7. Show Test Results
+    let choice = readlineSync.question(`Recompile: `);
+    if (result[choice]) {
+      rollbackTruffleConfig(
+        path.join(targetCloneDir, path.dirname(result[choice].key)),
+      );
 
-  10. Rollback truffles-config.js
+      const solcversion = readlineSync
+        .question(
+          `Solidity compiler version (empty for discover dinamically in the .sol files):`,
+        )
+        .trim();
+      await solidityTruffleUtils.compile(
+        repoTruffledWithTests.findIndex(item => {
+          return item.repo.full_name.startsWith(result[choice].full_name);
+        }),
+        0,
+        false,
+        false,
+        solcversion != '' ? solcversion : null,
+      );
+    }
+    showMenu();
+  }
 
-  Your choice: `);
+  async function _7() {
+    /*rollbackTrufflesConfig(
+      Object.values(solidityRepos).filter(
+        sr => sr.testTrees.length > 0 && sr.truffleTrees.length > 0,
+      ),
+    );*/
 
-  if (functionality === '10') {
+    const compilationFailed = Object.values(
+      resultsQuery.getResearchData(),
+    ).filter(item => {
+      return item.compileExitCode !== 0;
+    });
+
+    await Promise.all(
+      await compilationFailed.map(async item => {
+        rollbackTruffleConfig(
+          path.join(targetCloneDir, path.dirname(item.key)),
+        );
+      }),
+    );
+
+    const reposCompilationFail = [];
+    for (const c of compilationFailed) {
+      reposCompilationFail.push(
+        repoTruffledWithTests.find(itemRepoTruffleWithTests => {
+          return itemRepoTruffleWithTests.repo.full_name === c.full_name;
+        }),
+      );
+    }
+
+    const solidityCompilationFailTruffleUtils = SolidityTruffleUtilsFactory({
+      repos: reposCompilationFail,
+      targetCloneDir,
+    });
+    //console.log(reposCompilationFail);
+    await solidityCompilationFailTruffleUtils.compile(0, 0, true);
+    showMenu();
+  }
+  async function _8() {
+    await solidityTruffleUtils.migrate(0, true, false, showMenu);
+  }
+  async function _9() {
+    const result = resultsQuery.showResults('migrate', true, false, null);
+
+    let choice = readlineSync.question(`Migrate: `);
+    if (result[choice]) {
+      await solidityTruffleUtils.migrate(
+        Object.keys(resultsQuery.getResearchData()).findIndex(key =>
+          path.dirname(key).startsWith(result[choice].full_name),
+        ),
+        false,
+      );
+    }
+    showMenu();
+  }
+  async function _10() {
+    await solidityTruffleUtils.migrate(0, true, true, showMenu);
+  }
+  async function _50() {
+    await solidityTruffleUtils.test(0, true, false, showMenu);
+  }
+
+  async function _51() {
+    const result = resultsQuery.showResults('test', true, null, null, {
+      property: 'test',
+      value: false,
+    });
+
+    let choice = readlineSync.question(`Test: `);
+    if (result[choice]) {
+      await solidityTruffleUtils.test(
+        Object.keys(resultsQuery.getResearchData()).findIndex(key =>
+          path.dirname(key).startsWith(result[choice].full_name),
+        ),
+        false,
+      );
+    }
+    showMenu();
+  }
+  async function _52() {
+    const regexPassing = /(\d+) passing/gm;
+
+    const notTested = [];
+    const researchData = Object.values(resultsQuery.getResearchData());
+    researchData.forEach((item, i) => {
+      if (
+        !Array.isArray(item.testStdOutEvents) ||
+        (item.migrateExitCode !== 0 && item.migrateExitCode != null)
+      ) {
+        return false;
+      }
+      regexPassing.lastIndex = 0;
+      const testStdOutEvents = item.testStdOutEvents.join(' ');
+      const matchPassing = regexPassing.exec(testStdOutEvents);
+      if (matchPassing == null) {
+        const errors =
+          testStdOutEvents.indexOf('Exceeds block gas limit') > -1
+            ? testStdOutEvents.substr(
+                testStdOutEvents.indexOf('Exceeds block gas limit'),
+                100,
+              )
+            : '';
+        //console.log(item.testStdOutEvents);
+        notTested.push({
+          i,
+          projectPath: path.dirname(item.key),
+          error: errors,
+        });
+      }
+    });
+
+    notTested.forEach(prj => {
+      console.log(prj.i, prj.projectPath, prj.error);
+    });
+    //console.log(reposNotTested);
+    //const retestIndex = readlineSync.question(`Retestar: `);
+    for (const nt of notTested) {
+      await solidityTruffleUtils.test(nt.i, false);
+    }
+    //TODO: Chamar showMenu aqui
+  }
+  function _80() {
+    const researchScopeData = Object.values(
+      solidityTruffleUtils.getResearchScopeData(),
+    );
+
+    const scopeIndexes = [];
+    researchScopeData.forEach((item, i) => {
+      scopeIndexes.push(item.index);
+      console.log(item.key);
+    });
+
+    /*await solidityTruffleUtils.npmInstallInResearchProjectsList(
+      scopeIndexes,
+      'solidity-coverage',
+    );*/
+  }
+  async function _81() {
+    await solidityTruffleUtils.executeSonarScanner(0, true);
+  }
+  function _99() {
     rollbackTrufflesConfig(
       Object.values(solidityRepos).filter(
         sr => sr.testTrees.length > 0 && sr.truffleTrees.length > 0,
       ),
     );
-  } else if (functionality === '7') {
-    detailTestResults();
-  } else if (functionality === '5') {
-    const repoTruffledWithTests = Object.values(solidityRepos).filter(
-      sr => sr.testTrees.length > 0 && sr.truffleTrees.length > 0,
-    );
-    executeTruffleCompile(repoTruffledWithTests, 0, 0, true);
-  } else if (functionality === '4') {
-    const repoTruffledWithTests = Object.values(solidityRepos).filter(
-      sr => sr.testTrees.length > 0 && sr.truffleTrees.length > 0,
-    );
-    const solidityTruffleUtils = SolidityTruffleUtilsFactory({
-      repos: repoTruffledWithTests,
-      targetCloneDir,
-    });
-    await solidityTruffleUtils.cloneAndInstall(0, true);
-  } else if (functionality === '3') {
-    detailTruffleTestable(solidityRepos);
-  } else if (functionality === '2') {
-    showGlobalStats(solidityRepos);
-  } else if (functionality === '1') {
-    retrieveGithubData();
   }
+  function _100() {
+    queries(resultsQuery);
+    showMenu();
+  }
+
+  //process.stdin.resume();
 })();
 
-function showGlobalStats(solidityRepos) {
-  console.log(
-    '#########################  REPOSITORY STATS #########################',
-  );
-  const reposLoaded = Object.values(solidityRepos);
-  printStarStatsTable(reposLoaded, 'Total');
-  printStarStatsTable(
-    reposLoaded.filter(sr => sr.truffleTrees.length > 0),
-    'Truffled',
-  );
-  printStarStatsTable(
-    reposLoaded.filter(sr => sr.testTrees.length > 0),
-    'Testable',
-  );
-  const repoTruffledWithTests = reposLoaded.filter(
-    sr => sr.testTrees.length > 0 && sr.truffleTrees.length > 0,
-  );
-  printStarStatsTable(repoTruffledWithTests, 'Truffled Testable');
-  const repoNOTruffledWithTests = reposLoaded.filter(
-    sr => sr.testTrees.length > 0 && sr.truffleTrees.length == 0,
-  );
-  printStarStatsTable(repoNOTruffledWithTests, 'Untruffled Testable');
-  // Truffled with Tests
-  let qtdByExtensao = countTestFilesByExtension(
-    repoTruffledWithTests,
-    'Truffled With Tests',
-  );
-  let qtdByQtdArquivosTeste = countReposByTestFilesQuantity(
-    repoTruffledWithTests,
-    'Truffled With Tests',
-  );
-  console.log('');
-  Object.keys(qtdByQtdArquivosTeste).forEach(qtdFiles => {
-    console.log(
-      `Truffle Testable - ${qtdFiles} files:`,
-      qtdByQtdArquivosTeste[qtdFiles].qtdRepos,
-      'repositories',
-    );
-  });
-  console.log('');
-  Object.keys(qtdByExtensao).forEach(ext => {
-    console.log(
-      `Truffle Testable - files ${ext} `,
-      qtdByExtensao[ext].qtd,
-      'files',
-      qtdByExtensao[ext].qtdRepos,
-      'repositories',
-    );
-  });
-  // NO Truffled with Tests
-  qtdByExtensao = countTestFilesByExtension(
-    repoNOTruffledWithTests,
-    'NO Truffled With Tests',
-  );
-  qtdByQtdArquivosTeste = countReposByTestFilesQuantity(
-    repoNOTruffledWithTests,
-    'NO Truffled With Tests',
-  );
-  console.log('');
-  Object.keys(qtdByQtdArquivosTeste).forEach(qtdFiles => {
-    console.log(
-      `NO Truffle Testable - ${qtdFiles} files:`,
-      qtdByQtdArquivosTeste[qtdFiles].qtdRepos,
-      'repositories',
-    );
-  });
-  console.log('');
-  Object.keys(qtdByExtensao).forEach(ext => {
-    console.log(
-      `NO Truffle Testable - files ${ext} `,
-      qtdByExtensao[ext].qtd,
-      'files',
-      qtdByExtensao[ext].qtdRepos,
-      'repositories',
-    );
-  });
-}
-
-function detailTruffleTestable(solidityRepos) {
-  const reposLoaded = Object.values(solidityRepos);
-  const repoTruffledWithTests = reposLoaded.filter(
-    sr => sr.testTrees.length > 0 && sr.truffleTrees.length > 0,
-  );
-  const data = {};
-  for (const r of repoTruffledWithTests) {
-    let jsTestFiles = 0;
-    let solTestFiles = 0;
-    r.testTrees.forEach(t => {
-      if (t.children && Array.isArray(t.children)) {
-        t.children.forEach(f => {
-          if (path.extname(f.path).toLowerCase() == '.js') {
-            jsTestFiles += 1;
-          } else if (path.extname(f.path).toLowerCase() == '.sol') {
-            solTestFiles += 1;
-          }
-        });
-      }
-    });
-    data[r.repo.full_name] = {
-      stars: r.repo.stargazers_count,
-      pushed_at: r.repo.pushed_at,
-      testTrees: r.testTrees.length,
-      JStestFiles: jsTestFiles,
-      SOLtestFiles: solTestFiles,
-      truffleTrees: r.truffleTrees.length,
-    };
-    data[r.repo.full_name]['size (MB)'] = parseFloat(
-      (r.repo.size / 1024).toFixed(2),
-    );
-  }
-  console.table(data);
-}
-
-function printStarStatsTable(dataArray, label) {
-  const data = {};
-  data[label] = { qtdRepositories: dataArray.length };
-  data[`${label} Starred:`] = {
-    qtdRepositories: dataArray.filter(sr => sr.repo.stargazers_count > 0)
-      .length,
-  };
-  data[`${label} 10+Stars:`] = {
-    qtdRepositories: dataArray.filter(sr => sr.repo.stargazers_count >= 10)
-      .length,
-  };
-  data[`${label} 50+Stars:`] = {
-    qtdRepositories: dataArray.filter(sr => sr.repo.stargazers_count >= 50)
-      .length,
-  };
-  data[`${label} 100+Stars:`] = {
-    qtdRepositories: dataArray.filter(sr => sr.repo.stargazers_count >= 100)
-      .length,
-  };
-  console.table(data);
-}
-
-function countTestFilesByExtension(repos) {
-  const qtdByExtensao = {};
-
-  repos.forEach(r => {
-    let totalFiles = 0;
-    r.testTrees.forEach(t => {
-      if (t.children && Array.isArray(t.children)) {
-        t.children.forEach(f => {
-          // sum files of repository
-          totalFiles += 1;
-          // calc by extension
-          if (qtdByExtensao[path.extname(f.path).toLowerCase()] == null) {
-            qtdByExtensao[path.extname(f.path).toLowerCase()] = {
-              qtd: 0,
-              qtdRepos: 0,
-            };
-          }
-          qtdByExtensao[path.extname(f.path).toLowerCase()].qtd += 1;
-          if (
-            r.repo.full_name !==
-            qtdByExtensao[path.extname(f.path).toLowerCase()].ultimoRepositorio
-          ) {
-            qtdByExtensao[
-              path.extname(f.path).toLowerCase()
-            ].ultimoRepositorio = r.repo.full_name;
-            qtdByExtensao[path.extname(f.path).toLowerCase()].qtdRepos += 1;
-          }
-        });
-      }
-    });
-  });
-  return qtdByExtensao;
-}
-
-function countReposByTestFilesQuantity(repos) {
-  const qtdByQtdArquivosTeste = {};
-
-  repos.forEach(r => {
-    let totalFiles = 0;
-    r.testTrees.forEach(t => {
-      if (t.children && Array.isArray(t.children)) {
-        totalFiles += t.children.length;
-      }
-    });
-    if (qtdByQtdArquivosTeste[totalFiles] == null) {
-      qtdByQtdArquivosTeste[totalFiles] = { qtdRepos: 0, repos: [] };
-    }
-    qtdByQtdArquivosTeste[totalFiles].qtdRepos += 1;
-    qtdByQtdArquivosTeste[totalFiles].repos.push(r.repo.full_name);
-  });
-  return qtdByQtdArquivosTeste;
-}
-
-function printStarStats(dataArray, label) {
-  console.log(label, ':', dataArray.length);
-  console.log(
-    `${label} Starred:`,
-    dataArray.filter(sr => sr.repo.stargazers_count > 0).length,
-  );
-  console.log(
-    `${label} 10+Stars:`,
-    dataArray.filter(sr => sr.repo.stargazers_count >= 10).length,
-  );
-  console.log(
-    `${label} 50+Stars:`,
-    dataArray.filter(sr => sr.repo.stargazers_count >= 50).length,
-  );
-  console.log(
-    `${label} 100+Stars:`,
-    dataArray.filter(sr => sr.repo.stargazers_count >= 100).length,
-  );
-  console.log('');
-}
-
-async function retrieveGithubData() {
+async function retrieveGithubData(
+  filePathRepositoriesData,
+  additionalFilter,
+  solidityRepos,
+) {
   const gitService = new GitHubService();
 
   let page = 0;
   const perPage = 100;
 
-  const filePath =
-    process.argv.length > 2
-      ? process.argv[2]
-      : './data/gitHubSolidityRepos.json';
-  const solidityRepos = {};
   let repos = null;
   const reposWithTest = [];
 
@@ -313,9 +332,7 @@ async function retrieveGithubData() {
 
   const forceSearchTest =
     readlineSync
-      .question(
-        "Search for 'test' and 'tests' even if it's already have a list (s/N)?: ",
-      )
+      .question("Search for 'test' and 'tests' (s/N)?: ")
       .toUpperCase() === 'S';
 
   do {
@@ -327,6 +344,7 @@ async function retrieveGithubData() {
       order: 'desc',
       page,
       per_page: perPage,
+      additionalFilter,
     });
     console.log(repos.total_count, repos.items.length);
 
@@ -358,12 +376,14 @@ async function retrieveGithubData() {
           ),
         );
         solidityRepos[r.full_name].repo.stargazers_count = r.stargazers_count;
-        fs.writeFileSync(filePath, solidityRepos, { encoding: 'UTF8' });
+        fs.writeFileSync(filePathRepositoriesData, solidityRepos, {
+          encoding: 'UTF8',
+        });
       }
 
       // SEARCH FOR DIRECTORIES 'test' OR 'tests'
       // search only if there is no item in the results
-      if (solidityRepos[r.full_name].testTrees.length == 0 || forceSearchTest) {
+      if (forceSearchTest) {
         // Just to don't be interpreted as abuse detection by github.com
         await new Promise(done => setTimeout(done, 2000));
         let searchResult = await gitService.searchTreesInRepository({
@@ -420,7 +440,7 @@ async function retrieveGithubData() {
             }
           }
           tree.forEach(t => {
-            console.log(t.path);
+            //console.log(t.path);
             if (t.size > 0) {
               testDir.children.push(t);
             }
@@ -428,9 +448,13 @@ async function retrieveGithubData() {
         }
         solidityRepos[r.full_name].testTrees = searchResult;
 
-        fs.writeFileSync(filePath, JSON.stringify(solidityRepos, null, 4), {
-          encoding: 'UTF8',
-        });
+        fs.writeFileSync(
+          filePathRepositoriesData,
+          JSON.stringify(solidityRepos, null, 4),
+          {
+            encoding: 'UTF8',
+          },
+        );
       }
 
       // SEARCH FOR FILES 'trufle.js' OR 'trufle-config.js'
@@ -444,7 +468,7 @@ async function retrieveGithubData() {
         const searchResult = await gitService.searchTreesInRepository({
           repo: r.name,
           owner: r.owner.login,
-          names: ['trufle.js', 'truffle-config.js'],
+          names: ['truffle-config.js'],
           treeType: 'blob',
         });
 
@@ -467,9 +491,14 @@ async function retrieveGithubData() {
         } else {
           solidityRepos[r.full_name].truffleTrees = searchResult;
         }
-        fs.writeFileSync(filePath, JSON.stringify(solidityRepos, null, 4), {
-          encoding: 'UTF8',
-        });
+        solidityRepos[r.full_name].retrieveDate = new Date();
+        fs.writeFileSync(
+          filePathRepositoriesData,
+          JSON.stringify(solidityRepos, null, 4),
+          {
+            encoding: 'UTF8',
+          },
+        );
       }
 
       /* if (searchResult.items && searchResult.items.length > 0) {
@@ -494,84 +523,6 @@ async function retrieveGithubData() {
   });
 }
 
-/**
- * Execute 'truffle compile' referenced in {solidityRepos} in the position {index}
- *
- * @param {Array} repos Collection of github repos
- * @param {number} index Position of the {solidityRepos} to be compiled
- * @param {number} indexTruffleTree Position of the {solidityRepos.truffleTree} to be compiled
- * @param {boolean} compileNext If TRUE, when finished the compilation, will call the function again passsing {index}+1
- */
-function executeTruffleCompile(repos, index, indexTruffleTree, compileNext) {
-  if (index < repos.length) {
-    if (indexTruffleTree < repos[index].truffleTrees.length) {
-      const t = repos[index].truffleTrees[indexTruffleTree];
-      const key = `${repos[index].repo.full_name}/${t.path}`;
-      testData[key] = {
-        key: key,
-        full_name: repos[index].repo.full_name,
-        path: t.path,
-        compileStart: new Date(),
-        compileErrors: [],
-        compileStdErrorEvents: [],
-        compileStdOutEvents: [],
-      };
-      const cwd = path.join(
-        targetCloneDir,
-        repos[index].repo.full_name,
-        path.dirname(t.path),
-      );
-      testData[key].solcVersion = updateTruffleConfig(cwd);
-      const childProcTruffle = spawn('truffle', ['compile'], { cwd });
-      // Tratamento de erro
-      childProcTruffle.on('error', error => {
-        testData[key].compileErrors.push(error.toString());
-        fs.writeFileSync(filePathTestsData, JSON.stringify(testData), {
-          encoding: 'UTF8',
-        });
-      });
-
-      // trata saída de erro
-      childProcTruffle.stderr.on('data', data => {
-        testData[key].compileStdErrorEvents.push(data.toString());
-        fs.writeFileSync(filePathTestsData, JSON.stringify(testData), {
-          encoding: 'UTF8',
-        });
-      });
-      // Saída padrão
-      childProcTruffle.stdout.on('data', data => {
-        testData[key].compileStdOutEvents.push(data.toString());
-        fs.writeFileSync(filePathTestsData, JSON.stringify(testData), {
-          encoding: 'UTF8',
-        });
-      });
-      // trata saída
-      childProcTruffle.on('exit', async (code, signal) => {
-        testData[key].compileFinish = new Date();
-        testData[key].compileExitCode = code;
-        testData[key].compileExitSignal = signal;
-        if (code === 0 && signal == null) {
-          console.log(colors.green(`Compile completed ${cwd}`));
-        } else {
-          console.warn(
-            colors.yellow(
-              `Erro onExit test ${cwd}. Verifique o console para identificar a causa`,
-            ),
-          );
-        }
-        fs.writeFileSync(filePathTestsData, JSON.stringify(testData), {
-          encoding: 'UTF8',
-        });
-        if (compileNext) {
-          executeTruffleCompile(repos, index, indexTruffleTree + 1, true);
-        }
-      });
-    } else {
-      executeTruffleCompile(repos, index + 1, 0, true);
-    }
-  }
-}
-
 function rollbackTrufflesConfig(repos) {
   repos.forEach(r => {
     r.truffleTrees.forEach(tt => {
@@ -581,228 +532,24 @@ function rollbackTrufflesConfig(repos) {
         path.dirname(tt.path),
       );
 
-      let truffleConfigPath = null;
-      if (fs.existsSync(path.join(cwd, 'truffle-config.js'))) {
-        truffleConfigPath = path.join(cwd, 'truffle-config.js');
-      } else if (fs.existsSync(path.join(cwd, 'truffle.js'))) {
-        truffleConfigPath = path.join(cwd, 'truffle.js');
-      }
-      if (truffleConfigPath != null) {
-        if (fs.existsSync(`${truffleConfigPath}.bkp`)) {
-          fs.copyFileSync(`${truffleConfigPath}.bkp`, truffleConfigPath);
-        }
-        console.log(`${truffleConfigPath}.bkp`, 'APAGADO'.yellow);
-      } else {
-        console.log(`${truffleConfigPath} NÃO ENCONTRADO`.red);
-      }
+      rollbackTruffleConfig(cwd);
     });
   });
 }
 
-function updateTruffleConfig(projectHomePath) {
-  let result = null;
-  try {
-    let truffleConfigPath = null;
-    if (fs.existsSync(path.join(projectHomePath, 'truffle-config.js'))) {
-      truffleConfigPath = path.join(projectHomePath, 'truffle-config.js');
-    } else if (fs.existsSync(path.join(projectHomePath, 'truffle.js'))) {
-      truffleConfigPath = path.join(projectHomePath, 'truffle.js');
-    }
-    if (truffleConfigPath != null) {
-      let truffleConfigContent = fs.readFileSync(truffleConfigPath, {
-        encoding: 'UTF8',
-      });
-      // If compiler version not specified in the truffle configuration
-      if (truffleConfigContent.indexOf('compilers') === -1) {
-        const solidityVersionNode = getContractsCompilerVersion(
-          projectHomePath,
-        );
-        if (solidityVersionNode != null) {
-          let compiler = `
-  compilers: {
-    solc: {
-      version: "${solidityVersionNode.value}",
-    }
+function rollbackTruffleConfig(cwd) {
+  let truffleConfigPath = null;
+  if (fs.existsSync(path.join(cwd, 'truffle-config.js'))) {
+    truffleConfigPath = path.join(cwd, 'truffle-config.js');
+  } else if (fs.existsSync(path.join(cwd, 'truffle.js'))) {
+    truffleConfigPath = path.join(cwd, 'truffle.js');
   }
-  `;
-          result = solidityVersionNode.value;
-          const position = truffleConfigContent.lastIndexOf('}');
-
-          if (
-            truffleConfigContent.indexOf('networks') > -1 &&
-            truffleConfigContent[position - 1] != ',' &&
-            truffleConfigContent[position - 2] != ','
-          ) {
-            compiler = ',\n'.concat(compiler);
-          }
-          truffleConfigContent = [
-            truffleConfigContent.slice(0, position),
-            compiler,
-            truffleConfigContent.slice(position),
-          ].join('');
-          fs.copyFileSync(truffleConfigPath, `${truffleConfigPath}.bkp`);
-          fs.writeFileSync(truffleConfigPath, truffleConfigContent, {
-            encoding: 'UTF8',
-          });
-        }
-      } else {
-        console.log(`${truffleConfigPath}`.green);
-      }
+  if (truffleConfigPath != null) {
+    if (fs.existsSync(`${truffleConfigPath}.bkp`)) {
+      fs.copyFileSync(`${truffleConfigPath}.bkp`, truffleConfigPath);
     }
-  } catch (e) {
-    console.log(colors.red(e.message), e);
-  }
-  return result;
-}
-
-function getContractsCompilerVersion(projectHomePath) {
-  const contractsDir = path.join(projectHomePath, 'contracts');
-  if (fs.existsSync(contractsDir)) {
-    const solidityFiles = getAllSolidityFiles(contractsDir);
-    let versions = [];
-    //take just the first solidity file
-    versions = SolidityParser.getSolidityVersions(solidityFiles[0]);
-    if (versions == null) {
-      console.log(
-        colors.red(`No Solidity Files in ${contractsDir}`),
-        projectHomePath,
-      );
-      return null;
-    } else if (versions.length < 1) {
-      console.log(
-        colors.red(`No PragmaDirective of Solidity version`),
-        projectHomePath,
-      );
-      return null;
-    } else {
-      for (const version of versions) {
-        if (version.name === 'solidity') {
-          return version;
-        }
-        console.log(
-          colors.red(`No PragmaDirective of Solidity version`),
-          projectHomePath,
-        );
-        return null;
-      }
-    }
+    console.log(`${truffleConfigPath}.bkp`, 'APAGADO'.yellow);
   } else {
-    console.log(`${contractsDir} NOT FOUND`.bgYellow);
+    console.log(`${truffleConfigPath} NÃO ENCONTRADO`.red);
   }
-}
-
-function getAllSolidityFiles(contractsDir) {
-  let result = [];
-  const items = fs.readdirSync(contractsDir);
-  for (const fileSol of items) {
-    const itemPath = path.join(contractsDir, fileSol);
-    if (fs.lstatSync(itemPath).isDirectory()) {
-      result = result.concat(getAllSolidityFiles(itemPath));
-    } else if (path.extname(fileSol).toLowerCase() === '.sol') {
-      result.push(itemPath);
-    }
-  }
-  return result;
-}
-
-/**
- * Execute 'truffle test' referenced in {solidityRepos} in the position {index}
- *
- * @param {Array} repos Collection of github repos
- * @param {number} index Position of the {solidityRepos} to be cloned
- * @param {boolean} testNext If TRUE, when finished the clone, will call the function again passsing {index}+1
- */
-function executeTruffleTests(repos, index, testNext) {
-  if (index < repos.length) {
-    repos[index].testTrees.forEach(t => {
-      if (
-        !Object.prototype.hasOwnProperty.call(
-          testData,
-          repos[index].repo.full_name,
-        )
-      ) {
-        testData[repos[index].repo.full_name] = {
-          full_name: repos[index].repo.full_name,
-        };
-      }
-      // parent directory of tests
-      testData[repos[index].repo.full_name].testStart = new Date();
-      testData[repos[index].repo.full_name].testErrors = [];
-      testData[repos[index].repo.full_name].testStdErrorEvents = [];
-      testData[repos[index].repo.full_name].testStdOutEvents = [];
-      const cwd = path.resolve(
-        targetCloneDir,
-        path.join(
-          repos[index].repo.full_name,
-          path.join(repos[index].testTrees[0].path),
-          '..',
-        ),
-      );
-      const childProcTruffle = spawn('truffle', ['test'], { cwd });
-      // Tratamento de erro
-      childProcTruffle.on('error', error => {
-        testData[repos[index].repo.full_name].testErrors.push(error);
-        fs.writeFileSync(filePathTestsData, testData, { encoding: 'UTF8' });
-      });
-
-      // trata saída de erro
-      childProcTruffle.stderr.on('data', data => {
-        testData[repos[index].repo.full_name].testStdErrorEvents.push(data);
-        fs.writeFileSync(filePathTestsData, testData, { encoding: 'UTF8' });
-      });
-      // Saída padrão
-      childProcTruffle.stdout.on('data', data => {
-        testData[repos[index].repo.full_name].testStdOutEvents.push(data);
-        fs.writeFileSync(filePathTestsData, testData, { encoding: 'UTF8' });
-      });
-      // trata saída
-      childProcTruffle.on('exit', async (code, signal) => {
-        testData[repos[index].repo.full_name].testFinish = new Date();
-        testData[repos[index].repo.full_name].testExitCode = code;
-        testData[repos[index].repo.full_name].testExitSignal = signal;
-        if (code === 0 && signal == null) {
-          console.log(
-            colors.green(`Concluído test ${repos[index].repo.full_name}`),
-          );
-        } else {
-          console.warn(
-            colors.yellow(
-              `Erro onExit test ${
-                repos[index].repo.full_name
-              }. Verifique o console para identificar a causa`,
-            ),
-          );
-        }
-        fs.writeFileSync(filePathTestsData, testData, { encoding: 'UTF8' });
-        if (testNext) {
-          executeTruffleTests(repos, index + 1, true);
-        }
-      });
-    });
-  }
-}
-
-function detailTestResults() {
-  for (const r of testData) {
-    let resultado = '';
-    if (r.compileExitCode !== 0) {
-      const stdOutError = r.compileStdOutEvents.filter(item =>
-        item.startsWith('Error'),
-      );
-      if (stdOutError.length > 0) {
-        resultado = stdOutError[0];
-        if (resultado.indexOf('\n') !== -1) {
-          resultado = resultado.split('\n')[0];
-        }
-      }
-    }
-
-    data[path.dirname(r.key)] = {
-      solcVersion: r.solcVersion,
-      compilado: r.compileExitCode === 0,
-      DataCompilacao: r.compileFinish,
-      Resultado: resultado,
-    };
-  }
-  console.table(data);
 }

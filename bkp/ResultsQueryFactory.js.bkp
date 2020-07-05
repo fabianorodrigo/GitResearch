@@ -1,0 +1,247 @@
+const colors = require('colors');
+const fs = require('fs');
+const path = require('path');
+
+/**
+ * Immutable instance with functions to query on the results of the research
+ *
+ * @param {Array} repos Collection of github repos
+ * @param {string} filePathResearchData Path of the file with research data to be queried
+ * @returns {object} Immutable object with query functions
+ */
+module.exports = function ResultsQueryFactory({ repos, filePathResearchData }) {
+  let researchData = {};
+  if (fs.existsSync(filePathResearchData)) {
+    researchData = JSON.parse(
+      fs.readFileSync(filePathResearchData, { encoding: 'UTF8' }),
+    );
+  }
+
+  return Object.freeze({
+    showResults,
+    getResearchData,
+    getResearchScopeData,
+  });
+
+  function getResearchData() {
+    return JSON.parse(
+      fs.readFileSync(filePathResearchData, { encoding: 'UTF8' }),
+    );
+  }
+
+  /**
+   *
+   */
+  function getResearchScopeData() {
+    let result = [];
+    let i = 0;
+
+    for (const r of Object.values(researchData)) {
+      if (r.testStdOutEvents != null) {
+        //Passing
+        const regexPassing = /(\u001b\[0m\u001b\[32m)* (\d+) passing(\u001b\[0m\u001b\[90m)* \(\d+m*s*\)/gm;
+        const matchPassing = regexPassing.exec(r.testStdOutEvents.join(' '));
+        // Failing
+        const regexFailing = /(\d+) failing/gm;
+        const matchFailing = regexFailing.exec(r.testStdOutEvents.join(' '));
+        //If none match, there was problem during testing
+        if (matchFailing !== null || matchPassing !== null) {
+          //passing
+          r.pass = 0;
+          if (matchPassing != null && matchPassing.length > 2) {
+            r.pass = parseInt(matchPassing[2]);
+          }
+          //failing
+          r.fail = 0;
+          if (matchFailing != null && matchFailing.length > 1) {
+            r.fail = parseInt(matchFailing[1]);
+          }
+
+          //somente se não falhou o caso de teste
+          if (r.fail === 0 && r.pass > 0) {
+            r.index = i;
+            result.push(r);
+          }
+        }
+      }
+      i += 1;
+    }
+
+    return result;
+  }
+
+  /**
+   *
+   */
+  function showResults(
+    command,
+    onlyWithTestDir = false,
+    successFilter,
+    solcVersionFilter,
+    postFilter = null,
+  ) {
+    let data = {};
+    let i = 0;
+    let totalSuccessful = 0;
+    let totalHasTestDir = 0;
+    let totalBySolidityVersion = {};
+    let scope = Object.values(researchData);
+    //filter the projects that has testdir
+    if (onlyWithTestDir) {
+      scope = scope.filter(item => {
+        return item.hasTestDir === true;
+      });
+    }
+    if (solcVersionFilter) {
+      scope = scope.filter(item => {
+        return (
+          item.solcVersion == null ||
+          item.solcVersion.replace('^', '').startsWith(solcVersionFilter)
+        );
+      });
+    }
+    //filter based on the successful execution of command
+    if (successFilter !== null) {
+      scope = scope.filter(item => {
+        return (
+          (item[`${command}ExitCode`] === 0) === successFilter &&
+          item[`${command}ExitCode`] != null
+        );
+      });
+    }
+    for (const r of scope) {
+      let resultado = '';
+      if (r[`${command}ExitCode`] !== 0 && r[`${command}StdOutEvents`]) {
+        const stdOutError = r[`${command}StdOutEvents`].filter(item =>
+          item.startsWith('Error'),
+        );
+        if (stdOutError.length > 0) {
+          resultado = stdOutError[0];
+          if (resultado.indexOf('\n') !== -1) {
+            resultado = resultado.split('\n')[0];
+          }
+        }
+      }
+      //IF NOT SUCESS, CONSOLE ERRORS
+      if (r[`${command}ExitCode`] !== 0 && r[`${command}StdOutEvents`]) {
+        const msg = r[`${command}StdOutEvents`].join(' ').replace('\n', ' ');
+        console.log(
+          colors.yellow(r.key),
+          ':',
+          msg.substr(msg.indexOf('Error'), 200),
+          /*.filter(item => {
+              return item.indexOf('Error') > -1;
+            })
+            .map(item => {
+              return item.split('\n')[0];
+            }),*/
+        );
+      }
+
+      const repo = repos.find(item => {
+        return item.repo.full_name === r.full_name;
+      }).repo;
+      data[path.dirname(r.key)] = {
+        index: i,
+        repoPushed: repo.pushed_at,
+        solcVersion: r.solcVersion,
+        hasTestDir: r.hasTestDir,
+        compile:
+          r[`compileExitCode`] == null ? null : r[`compileExitCode`] === 0,
+        migrate:
+          r[`migrateExitCode`] == null ? null : r[`migrateExitCode`] === 0,
+        //tested: r[`testExitCode`] == null ? null : r[`testExitCode`] === 0, - THE EXIT CODE OF TEST IS THE NUMBER OF FAILING CASES
+        //Date: r[`${command}Finish`],
+      };
+      if (r.testStdOutEvents != null) {
+        //Passing
+        const regexPassing = /(\u001b\[0m\u001b\[32m)* (\d+) passing(\u001b\[0m\u001b\[90m)* \(\d+m*s*\)/gm;
+        const matchPassing = regexPassing.exec(r.testStdOutEvents.join(' '));
+        // Failing
+        const regexFailing = /\u001b\[0m\n\u001b\[31m  (\d+) failing\u001b\[0m/gm;
+        const matchFailing = regexFailing.exec(r.testStdOutEvents.join(' '));
+        //If none match, there was problem during testing
+        if (matchFailing === null && matchPassing === null) {
+          data[path.dirname(r.key)].test = false;
+          console.log(r.key, r[`${command}StdOutEvents`]);
+        } else {
+          data[path.dirname(r.key)].test = true;
+          //passing
+          data[path.dirname(r.key)].pass = 0;
+          if (matchPassing != null && matchPassing.length > 2) {
+            data[path.dirname(r.key)].pass = parseInt(matchPassing[2]);
+          }
+          //failing
+          data[path.dirname(r.key)].fail = 0;
+          if (matchFailing != null && matchFailing.length > 1) {
+            data[path.dirname(r.key)].fail = parseInt(matchFailing[1]);
+          }
+        }
+      }
+      i += 1;
+      if (data[path.dirname(r.key)].hasTestDir) {
+        totalHasTestDir += 1;
+      }
+      if (data[path.dirname(r.key)][command] === true) {
+        totalSuccessful += 1;
+      }
+      //summary by solidity compiler version
+      if (
+        totalBySolidityVersion[
+          data[path.dirname(r.key)].solcVersion.replace('^', '')
+        ] == null
+      ) {
+        totalBySolidityVersion[
+          data[path.dirname(r.key)].solcVersion.replace('^', '')
+        ] = {
+          total: 0,
+          totalSuccessful: 0,
+        };
+      }
+      totalBySolidityVersion[
+        data[path.dirname(r.key)].solcVersion.replace('^', '')
+      ].total += 1;
+      if (data[path.dirname(r.key)][command] === true) {
+        totalBySolidityVersion[
+          data[path.dirname(r.key)].solcVersion.replace('^', '')
+        ].totalSuccessful += 1;
+      }
+    }
+    //apply filter on the data results
+    if (postFilter != null && postFilter.property != null) {
+      Object.keys(data).forEach(prj => {
+        if (
+          (data[prj][postFilter.property] == null &&
+            postFilter.value != null) ||
+          data[prj][postFilter.property] != postFilter.value
+        ) {
+          delete data[prj];
+          const indexToRemoveScope = scope.findIndex(
+            item => path.dirname(item.key) === prj,
+          );
+          if (indexToRemoveScope > -1) {
+            scope.splice(indexToRemoveScope, 1);
+          }
+        }
+      });
+      //reindex
+      i = 0;
+      Object.values(data).forEach(prj => {
+        prj.index = i;
+        i += 1;
+      });
+    }
+    console.table(data);
+    console.log(
+      colors.yellow('Total successfull:'),
+      totalSuccessful,
+      '(',
+      Math.round((totalSuccessful / totalHasTestDir) * 100),
+      '%)',
+    );
+    console.log(colors.yellow('Total has test directory:'), totalHasTestDir);
+    console.table(totalBySolidityVersion);
+
+    return scope;
+  }
+};

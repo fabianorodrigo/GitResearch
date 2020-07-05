@@ -1,0 +1,31 @@
+{
+  "1": {
+    "text": "Retrieve/update local Solidity repositories data from Github"
+  },
+  "2": { "text": "Analyse Solidity repositories local data" },
+  "3": { "text": "Clone all truffled testable Solidity repositories" },
+  "3 ": {},
+  "4": {
+    "text": "Prepare project's truffle-config.js"
+  },
+  "4 ": {},
+  "5": { "text": "Compile truffled testable Solidity repositories" },
+  "6": { "text": "Compile One" },
+  "7": { "text": "Recompile all compilation fails" },
+  "7 ": {},
+  "8": { "text": "Migrate truffled compiled with test directory" },
+  "9": { "text": "Migrate One" },
+  "10": { "text": "Migrate all migration fails" },
+  "10 ": {},
+  "50": { "text": "Test truffled compiled with test directory" },
+  "51": { "text": "Test One" },
+  "52": { "text": "Retest all test fails (not tested)" },
+  "79 ": {},
+  "80": { "text": "Install solidity-coverage on Successfull Tests Projects" },
+  "81": {
+    "text": "Execute Sonar Scanner for successfull tests (create sonar-project.properties)"
+  },
+
+  "99": { "text": "Rollback truffles-config.js" },
+  "100": { "text": "Show Results" }
+}
