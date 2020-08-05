@@ -67,7 +67,7 @@ module.exports = function SolidityCoverageUtilsFactory({
             console.warn(
               colors.yellow(
                 `Erro onExit Git ${
-                  repos[index].repo.full_name
+                repos[index].repo.full_name
                 }. Verifique o console para identificar a causa`,
               ),
             );
@@ -451,7 +451,7 @@ sonar.sources=./contracts
       //the directory of the project has to exist
       //it have to have a subdirectory 'test'
       if (fs.existsSync(cwd) && researchData[key].hasTestDir === true) {
-        const childProcNpm = spawn('npm', ['install', '--save-dev', package], {
+        const childProcNpm = spawn('pnpm', ['install', '--save-dev', package], {
           cwd,
         });
         // Saídas de erro e padrão
@@ -460,11 +460,11 @@ sonar.sources=./contracts
         childProcNpm.on('exit', async (code, signal) => {
           if (code === 0 && signal == null) {
             console.log(
-              colors.green(`Concluído npm install --save-dev ${package}`),
+              colors.green(`Concluído pnpm install --save-dev ${package}`),
             );
           } else {
             console.warn(
-              colors.red(`Erro onExit npm install --save-dev ${package}`),
+              colors.red(`Erro onExit pnpm install --save-dev ${package}`),
             );
           }
           if (list.length > 1) {
@@ -511,7 +511,7 @@ sonar.sources=./contracts
           fs.existsSync(path.join(cwd, 'package.json')) &&
           !fs.existsSync(path.join(cwd, 'node_modules'))
         ) {
-          const childProcNpm = spawn('npm', ['install'], { cwd });
+          const childProcNpm = spawn('pnpm', ['install'], { cwd });
           // Saídas de erro e padrão
           handleChildProc(childProcNpm, repos[index].repo.full_name);
           // trata saída
@@ -527,13 +527,13 @@ sonar.sources=./contracts
               );
               console.log(
                 colors.green(
-                  `Concluído npm install ${repos[index].repo.full_name}`,
+                  `Concluído pnpm install ${repos[index].repo.full_name}`,
                 ),
               );
             } else {
               console.warn(
                 colors.red(
-                  `Erro onExit npm install ${repos[index].repo.full_name}`,
+                  `Erro onExit pnpm install ${repos[index].repo.full_name}`,
                 ),
               );
             }
@@ -604,8 +604,8 @@ function updateTruffleConfig(projectHomePath) {
   compilers: {
     solc: {
       version: "${
-        solidityVersion == null ? '0.5.10' : solidityVersion.replace('^', '')
-      }",
+            solidityVersion == null ? '0.5.10' : solidityVersion.replace('^', '')
+            }",
     }
   }
 };`;
@@ -667,7 +667,7 @@ function updateTruffleConfig(projectHomePath) {
             }
             if (
               (truffleConfigContent.match(new RegExp('}', 'g')) || []).length >
-                1 &&
+              1 &&
               (lastNotSpaceCharacter === '}' || lastNotSpaceCharacter === `'`)
             ) {
               compiler = ',\n'.concat(compiler);
