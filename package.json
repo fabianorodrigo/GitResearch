@@ -18,7 +18,7 @@
     "dropbox": "^2.5.13",
     "fs-extra": "^4.0.3",
     "moment": "^2.22.1",
-    "octokit": "^1.0.0-hello-world",
+    "octokit": "^3.1.2",
     "readline-sync": "^1.4.9",
     "solidity-parser-antlr": "^0.4.2"
  },
